@@ -43,6 +43,7 @@ html,body{margin:0;height:100%;background:#05030a;overflow:hidden}
   <div class="row"><label>Clean mode (coffee)</label><input type="checkbox" id="sClean"></div>
   <div class="row"><label>Difficulty</label><select id="sDiff"><option value="easy">Easy</option><option value="normal">Normal</option><option value="hard">Hard</option></select></div>
   <div class="row"><label>Cooldown / chatter (s)</label><input type="number" id="sCd" min="0" max="600" style="width:90px"></div>
+  <div class="row"><label>Small chat mode</label><select id="sSmall"><option value="auto">Auto (boost gold when few chat)</option><option value="on">Always on</option><option value="off">Off</option></select></div>
   <div class="row"><label>Max chat enemies</label><input type="number" id="sCap" min="1" max="300" style="width:90px"></div>
  </div>
  <h3>Audio</h3>
@@ -68,7 +69,10 @@ const DATA = {
   W: 1920, H: 1080,
   path: [[405,250],[560,250],[560,820],[820,820],[820,300],[1080,300],[1080,640],[1300,640],[1300,850],[1545,850]],
   pads: [[460,450],[690,560],[690,945],[950,470],[950,690],[1190,510],[1190,945],[1420,740]],
-  economy: { startGold: 160, trickle: 1.5, sellRefund: 0.6 },
+  economy: { startGold: 160, trickle: 1.5, sellRefund: 0.6,
+    // small-chat boost: fewer chatters = fewer chat enemies to farm, so the trickle (and a little kill gold) scales up.
+    // boost k = 1 at 0 active chatters, fading linearly to 0 at smallChatFull chatters.
+    smallChatFull: 8, smallTrickleBonus: 1.5, smallKillBonus: 0.1, activeWindow: 120 },
   chill: { max: 100, regenOnClear: 6 },
   wave: { firstBuild: 15, build: 12, baseDuration: 20, perWave: 2, maxDuration: 45, hpScale: 0.13, speedScale: 0.012 },
   difficulty: {
@@ -149,7 +153,7 @@ const SKEY = 'chatclash.settings.v1';
 const settings = Object.assign({
   channel: 'croww', rooms: Object.assign({}, DATA.kick.knownRooms), clean: false,
   userCooldown: DATA.chat.userCooldown, globalCap: DATA.chat.globalCap, difficulty: 'normal',
-  testMode: 'auto', botRate: DATA.test.botRate, npcWaves: true, volume: 60, muted: false, autoConnect: true
+  testMode: 'auto', botRate: DATA.test.botRate, npcWaves: true, smallChat: 'auto', volume: 60, muted: false, autoConnect: true
 }, (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })());
 settings.rooms = Object.assign({}, DATA.kick.knownRooms, settings.rooms || {});
 function saveSettings() { try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch (e) {} }
@@ -167,6 +171,7 @@ function normTestMode(v, fallback) {
 }
 settings.testMode = normTestMode(settings.testMode, 'auto');
 settings.npcWaves = settings.npcWaves !== false;
+if (!['auto', 'on', 'off'].includes(settings.smallChat)) settings.smallChat = 'auto';
 /* ?test= is a one-shot override for that page load. It is NOT allowed to beat a choice the streamer later makes
    in Settings: changing Test mode in-game strips the param from the URL (see clearTestParam) so a reload keeps it. */
 if (qs.has('test')) settings.testMode = normTestMode(qs.get('test'), settings.testMode);
@@ -251,6 +256,7 @@ function newGame() {
     crow: { hitT: 0, ringT: 0, cycle: 0, coughT: 0 }, crowBoss: { active: false, t: 0, cd: 0, puffT: 0, puffs: 0 }, resultsBtn: null, resultsAt: 0, bestAtStart: bestScore()
   };
   for (const k in cooldowns) delete cooldowns[k];
+  heldChat.length = 0;
   view.sel = -1;
   banner('BUILD YOUR DEFENSES', 'Click a glowing pad to place a tower', '#7fb069', 3.2);
 }
@@ -310,7 +316,7 @@ function dmgEnemy(e, amt, src) {
   if (src !== 'laser') SFX.play('hit');
   if (e.hp <= 0) {
     e.dead = true; G.kills++;
-    const g = Math.round(DATA.enemies[e.type].gold * diff().gold); G.gold += g;
+    const g = Math.round(DATA.enemies[e.type].gold * diff().gold * killGoldMult()); G.gold += g;
     G.texts.push({ x: e.x, y: e.y - 20, s: '+' + g, c: '#ffd23f', t: 0, dur: 0.9, size: 26, vy: -60 });
     const col = { bug: '#9be34a', troll: '#72b35e', lag: '#3fc8ff', spam: '#ff7ac8', boss: '#ff4060' }[e.type];
     const cnt = e.type === 'boss' ? 60 : e.type === 'troll' ? 22 : 12;
@@ -331,8 +337,7 @@ function deskHit(e) {
   G.shake = Math.min(DATA.fx.maxShake, G.shake + D.dmg * DATA.fx.shakePerDmg + 3);
   G.texts.push({ x: 1600, y: 690, s: '-' + D.dmg + ' CHILL', c: '#ff5070', t: 0, dur: 1.2, size: 40, vy: -60, pop: true });
   if (!e.isBot && e.lead) G.texts.push({ x: 1600, y: 735, s: e.user, c: userColor(e.user), t: 0, dur: 1.2, size: 26, vy: -60 });
-  for (let i = 0; i < 14; i++) { const a = rand(-2.6, -0.4); G.parts.push({ x: 1545, y: 850, vx: Math.cos(a) * rand(100, 380), vy: Math.sin(a) * rand(100, 380), t: 0, dur: rand(0.4, 0.8), size: rand(4, 8), c: pick(['#ff5070', '#ffd23f', '#fff']), g: 600 }); }
-  { const f = deskFace(); for (let i = 0; i < 6; i++) crowPuff(f[0] - 30, f[1] - 10, true); }
+  for (let i = 0; i < 14; i++) { const a = rand(-2.7, -1.75); G.parts.push({ x: 1545, y: 850, vx: Math.cos(a) * rand(100, 380), vy: Math.sin(a) * rand(100, 380), t: 0, dur: rand(0.4, 0.8), size: rand(4, 8), c: pick(['#ff5070', '#ffd23f', '#fff']), g: 600 }); }
   if (D.dmg >= DATA.emoteBigHit) G.pops.push({ name: 'crowwLUL', x: rand(1560, 1640), y: 600, t: 0, dur: 1.6, rot: rand(-0.3, 0.3) });
   SFX.play('cough');
   if (G.chill <= 0) defeat();
@@ -340,7 +345,7 @@ function deskHit(e) {
 function tryCommand(user, type, src) {
   if (!G || G.phase === 'defeat' || G.phase === 'results') return;
   if (src === 'bot' && !testModeActive()) return;
-  const key = user.toLowerCase(), now = performance.now() / 1000;
+  const key = user.toLowerCase(), now = G.time;   // game clock: cooldowns freeze while paused
   const cd = cooldowns[key] || 0;
   if (now < cd) { addFeed(user, '!' + type + '  (cooldown ' + Math.ceil(cd - now) + 's)', 'cd'); return; }
   if (type === 'boss' && !G.bossReady) { addFeed(user, '!boss  (locked - hype ' + Math.floor(G.hype) + '%)', 'lock'); return; }
@@ -362,8 +367,36 @@ function addHype(v) {
 }
 
 /* ===================================================================== chat input */
+/* PAUSE: while paused, incoming chat (Kick, fake-chat box) is HELD and replayed in order on resume, so nobody's
+   command is lost and nothing spawns/votes while the game is frozen. Bots can't chat while paused (botTick is frozen). */
+const heldChat = [];
+function setPaused(v) {
+  if (!G || G.phase === 'results') v = false;
+  if (!G) return;
+  const was = G.paused; G.paused = !!v;
+  if (G.paused && !was) { view.sel = -1; SFX.play('click'); }
+  if (!G.paused && was) {
+    const q = heldChat.splice(0);
+    for (const [u, m, s] of q) onChat(u, m, s);
+    if (q.length) addFeed('CHAT CLASH', q.length + ' held chat message' + (q.length === 1 ? '' : 's') + ' delivered', 'ok');
+  }
+}
+/* ---- small-chat economy. "Active chatters" = distinct people (Kick, fake-chat box, or test bots) who chatted in the
+   last DATA.economy.activeWindow seconds of game time. Small chat mode: auto = scale by that count, on = always the
+   full boost, off = flat trickle (the original economy). */
+let gameClock = 0; const lastSeen = {};
+function activeChatters() { const w = DATA.economy.activeWindow; let n = 0; for (const u in lastSeen) { if (gameClock - lastSeen[u] <= w) n++; else delete lastSeen[u]; } return n; }
+function smallChatK(n) {
+  if (settings.smallChat === 'off') return 0;
+  if (settings.smallChat === 'on') return 1;
+  return clamp(1 - (n == null ? activeChatters() : n) / DATA.economy.smallChatFull, 0, 1);
+}
+function goldPerSec(n) { return DATA.economy.trickle + DATA.economy.smallTrickleBonus * smallChatK(n); }
+function killGoldMult(n) { return 1 + DATA.economy.smallKillBonus * smallChatK(n); }
 function onChat(user, text, src) {
   if (!user || text == null || !G) return;
+  if (G.paused) { if (heldChat.length < 300) heldChat.push([user, text, src]); return; }
+  lastSeen[String(user).toLowerCase()] = gameClock;
   text = String(text).replace(/\[emote:\d+:([^\]]*)\]/g, '$1').trim();
   if (!text) return;
   addHype(DATA.chat.hypePerMsg);
@@ -411,6 +444,7 @@ function unlockCrowBoss(why) {
 function crowBossState() {
   const cb = G.crowBoss;
   if (!crowBossUnlocked()) return 'locked';
+  if (G.paused) return 'paused';
   if (cb.active) return 'active';
   if (G.phase !== 'build' && G.phase !== 'wave') return 'unavailable';
   return cb.cd > 0 ? 'cooldown' : 'ready';
@@ -452,7 +486,7 @@ function updateCrowBoss(dt) {
     G.rings.push({ x: p.x, y: p.y, r: 10, r2: D.radius * 0.6, t: 0, dur: 0.5, c: '#9fd07a', w: 6 });
     SFX.play('slow');
   }
-  if (Math.random() < dt * 6) { const p = crowBossPos(), tp = crowBossTip(); crowPuff(tp.x, tp.y, false); }
+  if (Math.random() < dt * 6) { const tp = crowBossTip(); if (tp.x < 1470) crowPuff(tp.x, tp.y, false); }
 }
 function crowBossTip() {
   const p = crowBossPos(), h = crowBossPose();
@@ -632,6 +666,7 @@ function crowPuff(x, y, big) {
 /* ===================================================================== main update */
 function update(dt) {
   if (!G) return;
+  gameClock += dt;
   botTick(dt);
   updateCrowBoss(dt);
   const C = G.crow;
@@ -662,7 +697,7 @@ function update(dt) {
   }
   const playing = G.phase === 'build' || G.phase === 'wave';
   if (playing) {
-    G.gold += DATA.economy.trickle * dt;
+    G.gold += goldPerSec() * dt;
     if (!G.bossReady) G.hype = Math.max(0, G.hype - DATA.chat.hypeDecay * dt);
     G.voteClock -= dt;
     if (G.voteClock <= 0 && !G.vote) { startVote(); G.voteClock = DATA.vote.interval; }
@@ -701,8 +736,7 @@ function update(dt) {
   for (const r of G.rings) r.t += dt; G.rings = G.rings.filter(r => r.t < r.dur);
   for (const t of G.texts) { t.t += dt; t.y += t.vy * dt; } G.texts = G.texts.filter(t => t.t < t.dur);
   if (G.phase !== 'results') {
-        // the desk mascot is now the approved image (no joint), so there is no ambient smoke from it; hits still puff dust
-    if (C.coughT > 0 && Math.random() < dt * 8) { const f = deskFace(); crowPuff(f[0] - 30, f[1] - 10, true); }
+        // the hooded desk mascot never emits smoke/puffs (no ambient, idle or hit puffs); only the Crow Boss smokes
   }
   for (const s of G.smoke) { s.t += dt; s.x += (s.vx + Math.sin(s.t * 2 + s.w) * 14) * dt; s.y += s.vy * dt; s.vx *= 0.99; }
   G.smoke = G.smoke.filter(s => s.t < s.dur);
@@ -1066,6 +1100,25 @@ function drawSpeaker(x, y, muted) {
   else { ctx.strokeStyle = DATA.pal.maroon; ctx.beginPath(); ctx.arc(x + 6, y, 10, -0.9, 0.9); ctx.stroke(); ctx.beginPath(); ctx.arc(x + 6, y, 18, -0.9, 0.9); ctx.stroke(); }
   ctx.restore();
 }
+function drawPauseBtn(x, y, paused, t) {
+  const hov = dist(view.mx, view.my, x, y) < 26;
+  ctx.save(); circ(x, y, 24); fs(paused ? '#7fb069' : hov ? 'rgba(74,26,26,0.15)' : 'rgba(0,0,0,0)', 4, DATA.pal.maroon);
+  if (paused) { ctx.beginPath(); ctx.moveTo(x - 7, y - 12); ctx.lineTo(x + 12, y); ctx.lineTo(x - 7, y + 12); ctx.closePath(); fs(DATA.pal.maroon); }
+  else { rr(x - 10, y - 12, 7, 24, 2); fs(DATA.pal.maroon); rr(x + 3, y - 12, 7, 24, 2); fs(DATA.pal.maroon); }
+  ctx.restore();
+}
+function drawPaused(rt) {
+  ctx.fillStyle = 'rgba(10,5,4,0.72)'; ctx.fillRect(0, 90, 1920, 950);
+  const w = 820, h = 420, x = 960 - w / 2, y = 290, pulse = 0.5 + 0.5 * Math.sin(rt * 2.4);
+  ctx.save(); ctx.shadowBlur = 30 + pulse * 20; ctx.shadowColor = '#9fd07a'; rr(x, y, w, h, 28); ctx.fillStyle = 'rgba(20,8,8,0.96)'; ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = '#b8e09a'; ctx.stroke(); ctx.restore();
+  if (artReady('logo')) { const im = ART.logo, lw = 360, lh = lw * im.naturalHeight / im.naturalWidth; ctx.save(); ctx.globalAlpha = 0.85 + pulse * 0.15; ctx.drawImage(im, 960 - lw / 2, y + 22, lw, lh); ctx.restore(); }
+  // big pause glyph + word
+  ctx.save(); ctx.shadowBlur = 24; ctx.shadowColor = '#f0b050'; rr(700, y + 170, 34, 110, 8); fs('#fef9e5', 5, '#f3c878'); rr(752, y + 170, 34, 110, 8); fs('#fef9e5', 5, '#f3c878'); ctx.restore();
+  ctx.save(); ctx.shadowBlur = 30; ctx.shadowColor = '#f0b050'; T('PAUSED', 1060, y + 226, 120, '#fef9e5', 'center', { w: 700, sw: 10, sc: '#4a1a1a' }); ctx.restore();
+  const n = heldChat.length;
+  T(n ? n + ' chat message' + (n === 1 ? '' : 's') + ' held - they play when the game resumes' : 'Chat is held while paused - commands play when the game resumes', 960, y + 330, 26, '#e0b45c', 'center', { w: 700, sw: 5 });
+  T('Croww will be right back  \u2022  P / Esc or the pause button to resume', 960, y + 372, 22, '#bfae86', 'center', { w: 600, stroke: false });
+}
 function drawTopBar(t) {
   const P = DATA.pal;
   ctx.fillStyle = P.cream; ctx.fillRect(0, 0, 1920, 90);
@@ -1084,8 +1137,9 @@ function drawTopBar(t) {
   const st = Kick.status, tm = testModeActive();
   const lc = st === 'live' ? '#3fae3a' : st === 'connecting' ? '#e0a020' : st === 'error' ? '#c0302a' : '#9c8a68';
   ctx.save(); ctx.shadowBlur = st === 'live' ? 14 : 0; ctx.shadowColor = lc; circ(1530, 46, 12 + (st === 'live' ? Math.sin(t * 4) * 1.5 : 0)); fs(lc, 3, P.maroon); ctx.restore();
-  T(st === 'live' ? 'LIVE CHAT  #' + settings.channel : st === 'connecting' ? 'CONNECTING\u2026' : 'CHAT OFFLINE', 1552, 32, 24, P.maroon, 'left', { w: 700, stroke: false });
-  T(tm ? 'TEST MODE (BOTS)' : st === 'live' ? Kick.msgs + ' msgs read' : 'press S to connect', 1552, 62, 19, tm ? P.tan : P.olive, 'left', { w: 500, stroke: false });
+  T(fit(st === 'live' ? 'LIVE  #' + settings.channel : st === 'connecting' ? 'CONNECTING\u2026' : 'CHAT OFFLINE', 22, 178, 700), 1552, 32, 22, P.maroon, 'left', { w: 700, stroke: false });
+  T(fit(tm ? 'TEST MODE (BOTS)' : st === 'live' ? Kick.msgs + ' msgs read' : 'press S to connect', 19, 170, 500), 1552, 62, 19, tm ? P.tan : P.olive, 'left', { w: 500, stroke: false });
+  drawPauseBtn(1762, 46, G.paused, t);
   drawSpeaker(1822, 46, settings.muted);
   drawGear(1884, 46, 22, t);
 }
@@ -1103,7 +1157,8 @@ function drawSidebar(t) {
     T(tag[0], 340, y - 7, 18, tag[1], 'right', { w: 900 });
   });
   T('Cooldown: ' + settings.userCooldown + 's per chatter', 185, 468, 20, '#fef9e5', 'center', { w: 800, stroke: false });
-  T('Chat minions: ' + chatLoad() + ' / ' + settings.globalCap + (G.chatQueue.length ? '   (' + G.chatQueue.length + ' queued)' : ''), 185, 493, 17, '#bfae86', 'center', { w: 700, stroke: false });
+  const nAct = activeChatters(), gps = goldPerSec(nAct);
+  T(fit('Minions ' + chatLoad() + '/' + settings.globalCap + (G.chatQueue.length ? ' (' + G.chatQueue.length + ' queued)' : '') + '  \u2022  ' + nAct + ' chatting  \u2022  +' + gps.toFixed(1) + 'g/s', 17, 336, 700), 185, 493, 17, gps > DATA.economy.trickle + 0.05 ? '#e0c878' : '#bfae86', 'center', { w: 700, stroke: false });
   panel(12, 520, 346, 86, G.bossReady ? '#ff4060' : '#6b4a32');
   const hpul = G.bossReady ? 1 + Math.sin(t * 8) * 0.08 : 1 + (G.hype / DATA.chat.hypeMax) * 0.06 * Math.sin(t * 4);
   drawEmoteImg('crowwHype', 20 - (hpul - 1) * 30, 524 - (hpul - 1) * 30, 60 * hpul, G.bossReady ? Math.sin(t * 10) * 0.12 : 0);
@@ -1402,7 +1457,7 @@ function render(t) {
   drawMenu(t);   // last of the in-game layers: the build ring is never hidden under side panels / banners
   if (G.phase === 'results') drawResults();
   drawTitle(t);
-  if (G.paused) { ctx.fillStyle = 'rgba(12,6,5,0.6)'; ctx.fillRect(0, 90, 1920, 950); T('PAUSED', 960, 500, 110, '#fff', 'center', { w: 900, sw: 14 }); T('press P or Esc to resume', 960, 580, 32, '#e9dfc4', 'center'); }
+  if (G.paused) { drawPaused(performance.now() / 1000); drawTopBar(t); }   // top bar stays visible so the pause button can be clicked
 }
 
 /* ===================================================================== input */
@@ -1417,13 +1472,14 @@ function inRect(p, b) { return b && p.x > b.x && p.x < b.x + b.w && p.y > b.y &&
 cv.addEventListener('mousemove', e => {
   const p = toGame(e); view.mx = p.x; view.my = p.y; if (!G) return;
   const h = hitTest(p.x, p.y); view.hoverPad = h.pad != null ? h.pad : -1;
-  const icon = dist(p.x, p.y, 1884, 46) < 30 || dist(p.x, p.y, 1826, 46) < 26;
+  const icon = dist(p.x, p.y, 1884, 46) < 30 || dist(p.x, p.y, 1826, 46) < 26 || dist(p.x, p.y, 1762, 46) < 26;
   cv.style.cursor = (h.btn || h.pad != null || icon || (G.phase === 'results' && inRect(p, G.resultsBtn))) ? 'pointer' : 'default';
 });
 cv.addEventListener('mousedown', e => {
   SFX.init(); const p = toGame(e); if (!G) return;
   if (view.titleT > 0) { view.titleT = Math.min(view.titleT, 0.8); return; }
   if (dist(p.x, p.y, 1884, 46) < 30) { toggleSettings(); return; }
+  if (dist(p.x, p.y, 1762, 46) < 26) { setPaused(!G.paused); return; }
   if (dist(p.x, p.y, 1826, 46) < 26) { settings.muted = !settings.muted; SFX.apply(); saveSettings(); syncSettingsUI(); return; }
   if (G.phase === 'results') { if (inRect(p, G.resultsBtn)) { newGame(); SFX.play('click'); } return; }
   if (G.phase === 'defeat' || G.paused) return;
@@ -1458,7 +1514,7 @@ window.addEventListener('keydown', e => {
   if (G.phase === 'results') { if (k === 'enter' || k === ' ') { newGame(); e.preventDefault(); } return; }
   if (k === 'escape' && view.settingsOpen) { toggleSettings(false); return; }
   if (k === 'escape' && view.sel >= 0 && !G.paused) { view.sel = -1; return; }
-  if (k === 'p' || k === 'escape') { G.paused = !G.paused; return; }
+  if (k === 'p' || k === 'escape') { setPaused(!G.paused); return; }
   if (G.paused) return;
   if (k === ' ') { e.preventDefault(); startWave(); return; }
   if (k === 'b') { deployCrowBoss(); return; }
@@ -1479,7 +1535,7 @@ function updateStatusUI() {
 }
 function syncSettingsUI() {
   $('sChannel').value = settings.channel; $('sRoom').value = settings.rooms[settings.channel] || '';
-  $('sTest').value = settings.testMode; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
+  $('sTest').value = settings.testMode; $('sSmall').value = settings.smallChat; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
   $('sClean').checked = settings.clean; $('sDiff').value = settings.difficulty; $('sCd').value = settings.userCooldown; $('sCap').value = settings.globalCap;
   $('bCrow').textContent = crowBossUnlocked() ? 'Crow Boss: unlocked (B to deploy)' : 'Unlock Crow Boss now'; $('sVol').value = settings.volume; $('vVol').textContent = settings.volume + '%'; $('sMute').checked = settings.muted; updateStatusUI();
 }
@@ -1490,6 +1546,7 @@ $('bConnect').onclick = () => { readChannel(); const v = $('sRoom').value.trim()
 $('bDisconnect').onclick = () => { settings.autoConnect = false; saveSettings(); Kick.disconnect(); };
 $('bLookup').onclick = async () => { readChannel(); delete settings.rooms[settings.channel]; $('sRoom').value = ''; const id = await Kick.lookup(); if (id) Kick.connect(); };
 $('sTest').onchange = () => { settings.testMode = normTestMode($('sTest').value, 'off'); if (!testModeActive()) stopBots(); clearTestParam(); saveSettings(); syncSettingsUI(); };
+$('sSmall').onchange = () => { settings.smallChat = $('sSmall').value; saveSettings(); };
 $('sNpc').onchange = () => { settings.npcWaves = $('sNpc').checked; saveSettings(); };
 $('sBotRate').oninput = () => { settings.botRate = +$('sBotRate').value; $('vBotRate').textContent = settings.botRate + ' msgs/min'; saveSettings(); };
 $('sClean').onchange = () => { settings.clean = $('sClean').checked; saveSettings(); };
@@ -1510,12 +1567,14 @@ window.addEventListener('resize', resize); resize();
 renderBG(); newGame(); syncSettingsUI();
 if (document.fonts) { document.fonts.load('700 40px Oswald'); document.fonts.load('400 20px Oswald'); }
 if (settings.autoConnect) Kick.connect(); else Kick.set('off', 'auto-connect off - press Connect');
-let last = performance.now(), manual = false;
+let last = performance.now(), manual = false, animT = 0;
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;   // clamped: resuming (or a hidden tab) never jumps
   if (view.titleT > 0) view.titleT -= dt;
-  if (!manual && G && !G.paused) update(dt);
-  render(now / 1000);
+  const paused = G && G.paused;
+  if (!manual && G && !paused) update(dt);
+  if (!paused) animT += dt;                    // gameplay animations freeze with the game
+  render(animT);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1524,7 +1583,7 @@ window.CC = {
   get G() { return G; }, DATA, settings, Kick, feed, onChat, testModeActive, stopBots, build, upgrade, startWave, newGame, toggleSettings,
   spawn(t, u) { spawnEnemy(t, u || 'tester', false); },
   step(sec, dt) { dt = dt || 1 / 30; const n = Math.round(sec / dt); for (let i = 0; i < n; i++) update(dt); },
-  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : performance.now() / 1000); }, forceVote() { G.voteClock = 0; }
+  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : animT); }, setPaused, heldChat, activeChatters, goldPerSec, smallChatK, forceVote() { G.voteClock = 0; }
 };
 </script>
 </body></html>

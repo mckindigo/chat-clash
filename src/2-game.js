@@ -13,6 +13,7 @@ function newGame() {
     crow: { hitT: 0, ringT: 0, cycle: 0, coughT: 0 }, crowBoss: { active: false, t: 0, cd: 0, puffT: 0, puffs: 0 }, resultsBtn: null, resultsAt: 0, bestAtStart: bestScore()
   };
   for (const k in cooldowns) delete cooldowns[k];
+  heldChat.length = 0;
   view.sel = -1;
   banner('BUILD YOUR DEFENSES', 'Click a glowing pad to place a tower', '#7fb069', 3.2);
 }
@@ -72,7 +73,7 @@ function dmgEnemy(e, amt, src) {
   if (src !== 'laser') SFX.play('hit');
   if (e.hp <= 0) {
     e.dead = true; G.kills++;
-    const g = Math.round(DATA.enemies[e.type].gold * diff().gold); G.gold += g;
+    const g = Math.round(DATA.enemies[e.type].gold * diff().gold * killGoldMult()); G.gold += g;
     G.texts.push({ x: e.x, y: e.y - 20, s: '+' + g, c: '#ffd23f', t: 0, dur: 0.9, size: 26, vy: -60 });
     const col = { bug: '#9be34a', troll: '#72b35e', lag: '#3fc8ff', spam: '#ff7ac8', boss: '#ff4060' }[e.type];
     const cnt = e.type === 'boss' ? 60 : e.type === 'troll' ? 22 : 12;
@@ -93,8 +94,7 @@ function deskHit(e) {
   G.shake = Math.min(DATA.fx.maxShake, G.shake + D.dmg * DATA.fx.shakePerDmg + 3);
   G.texts.push({ x: 1600, y: 690, s: '-' + D.dmg + ' CHILL', c: '#ff5070', t: 0, dur: 1.2, size: 40, vy: -60, pop: true });
   if (!e.isBot && e.lead) G.texts.push({ x: 1600, y: 735, s: e.user, c: userColor(e.user), t: 0, dur: 1.2, size: 26, vy: -60 });
-  for (let i = 0; i < 14; i++) { const a = rand(-2.6, -0.4); G.parts.push({ x: 1545, y: 850, vx: Math.cos(a) * rand(100, 380), vy: Math.sin(a) * rand(100, 380), t: 0, dur: rand(0.4, 0.8), size: rand(4, 8), c: pick(['#ff5070', '#ffd23f', '#fff']), g: 600 }); }
-  { const f = deskFace(); for (let i = 0; i < 6; i++) crowPuff(f[0] - 30, f[1] - 10, true); }
+  for (let i = 0; i < 14; i++) { const a = rand(-2.7, -1.75); G.parts.push({ x: 1545, y: 850, vx: Math.cos(a) * rand(100, 380), vy: Math.sin(a) * rand(100, 380), t: 0, dur: rand(0.4, 0.8), size: rand(4, 8), c: pick(['#ff5070', '#ffd23f', '#fff']), g: 600 }); }
   if (D.dmg >= DATA.emoteBigHit) G.pops.push({ name: 'crowwLUL', x: rand(1560, 1640), y: 600, t: 0, dur: 1.6, rot: rand(-0.3, 0.3) });
   SFX.play('cough');
   if (G.chill <= 0) defeat();
@@ -102,7 +102,7 @@ function deskHit(e) {
 function tryCommand(user, type, src) {
   if (!G || G.phase === 'defeat' || G.phase === 'results') return;
   if (src === 'bot' && !testModeActive()) return;
-  const key = user.toLowerCase(), now = performance.now() / 1000;
+  const key = user.toLowerCase(), now = G.time;   // game clock: cooldowns freeze while paused
   const cd = cooldowns[key] || 0;
   if (now < cd) { addFeed(user, '!' + type + '  (cooldown ' + Math.ceil(cd - now) + 's)', 'cd'); return; }
   if (type === 'boss' && !G.bossReady) { addFeed(user, '!boss  (locked - hype ' + Math.floor(G.hype) + '%)', 'lock'); return; }
@@ -124,8 +124,36 @@ function addHype(v) {
 }
 
 /* ===================================================================== chat input */
+/* PAUSE: while paused, incoming chat (Kick, fake-chat box) is HELD and replayed in order on resume, so nobody's
+   command is lost and nothing spawns/votes while the game is frozen. Bots can't chat while paused (botTick is frozen). */
+const heldChat = [];
+function setPaused(v) {
+  if (!G || G.phase === 'results') v = false;
+  if (!G) return;
+  const was = G.paused; G.paused = !!v;
+  if (G.paused && !was) { view.sel = -1; SFX.play('click'); }
+  if (!G.paused && was) {
+    const q = heldChat.splice(0);
+    for (const [u, m, s] of q) onChat(u, m, s);
+    if (q.length) addFeed('CHAT CLASH', q.length + ' held chat message' + (q.length === 1 ? '' : 's') + ' delivered', 'ok');
+  }
+}
+/* ---- small-chat economy. "Active chatters" = distinct people (Kick, fake-chat box, or test bots) who chatted in the
+   last DATA.economy.activeWindow seconds of game time. Small chat mode: auto = scale by that count, on = always the
+   full boost, off = flat trickle (the original economy). */
+let gameClock = 0; const lastSeen = {};
+function activeChatters() { const w = DATA.economy.activeWindow; let n = 0; for (const u in lastSeen) { if (gameClock - lastSeen[u] <= w) n++; else delete lastSeen[u]; } return n; }
+function smallChatK(n) {
+  if (settings.smallChat === 'off') return 0;
+  if (settings.smallChat === 'on') return 1;
+  return clamp(1 - (n == null ? activeChatters() : n) / DATA.economy.smallChatFull, 0, 1);
+}
+function goldPerSec(n) { return DATA.economy.trickle + DATA.economy.smallTrickleBonus * smallChatK(n); }
+function killGoldMult(n) { return 1 + DATA.economy.smallKillBonus * smallChatK(n); }
 function onChat(user, text, src) {
   if (!user || text == null || !G) return;
+  if (G.paused) { if (heldChat.length < 300) heldChat.push([user, text, src]); return; }
+  lastSeen[String(user).toLowerCase()] = gameClock;
   text = String(text).replace(/\[emote:\d+:([^\]]*)\]/g, '$1').trim();
   if (!text) return;
   addHype(DATA.chat.hypePerMsg);
@@ -173,6 +201,7 @@ function unlockCrowBoss(why) {
 function crowBossState() {
   const cb = G.crowBoss;
   if (!crowBossUnlocked()) return 'locked';
+  if (G.paused) return 'paused';
   if (cb.active) return 'active';
   if (G.phase !== 'build' && G.phase !== 'wave') return 'unavailable';
   return cb.cd > 0 ? 'cooldown' : 'ready';
@@ -214,7 +243,7 @@ function updateCrowBoss(dt) {
     G.rings.push({ x: p.x, y: p.y, r: 10, r2: D.radius * 0.6, t: 0, dur: 0.5, c: '#9fd07a', w: 6 });
     SFX.play('slow');
   }
-  if (Math.random() < dt * 6) { const p = crowBossPos(), tp = crowBossTip(); crowPuff(tp.x, tp.y, false); }
+  if (Math.random() < dt * 6) { const tp = crowBossTip(); if (tp.x < 1470) crowPuff(tp.x, tp.y, false); }
 }
 function crowBossTip() {
   const p = crowBossPos(), h = crowBossPose();
@@ -394,6 +423,7 @@ function crowPuff(x, y, big) {
 /* ===================================================================== main update */
 function update(dt) {
   if (!G) return;
+  gameClock += dt;
   botTick(dt);
   updateCrowBoss(dt);
   const C = G.crow;
@@ -424,7 +454,7 @@ function update(dt) {
   }
   const playing = G.phase === 'build' || G.phase === 'wave';
   if (playing) {
-    G.gold += DATA.economy.trickle * dt;
+    G.gold += goldPerSec() * dt;
     if (!G.bossReady) G.hype = Math.max(0, G.hype - DATA.chat.hypeDecay * dt);
     G.voteClock -= dt;
     if (G.voteClock <= 0 && !G.vote) { startVote(); G.voteClock = DATA.vote.interval; }
@@ -463,8 +493,7 @@ function update(dt) {
   for (const r of G.rings) r.t += dt; G.rings = G.rings.filter(r => r.t < r.dur);
   for (const t of G.texts) { t.t += dt; t.y += t.vy * dt; } G.texts = G.texts.filter(t => t.t < t.dur);
   if (G.phase !== 'results') {
-        // the desk mascot is now the approved image (no joint), so there is no ambient smoke from it; hits still puff dust
-    if (C.coughT > 0 && Math.random() < dt * 8) { const f = deskFace(); crowPuff(f[0] - 30, f[1] - 10, true); }
+        // the hooded desk mascot never emits smoke/puffs (no ambient, idle or hit puffs); only the Crow Boss smokes
   }
   for (const s of G.smoke) { s.t += dt; s.x += (s.vx + Math.sin(s.t * 2 + s.w) * 14) * dt; s.y += s.vy * dt; s.vx *= 0.99; }
   G.smoke = G.smoke.filter(s => s.t < s.dur);

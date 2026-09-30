@@ -11,6 +11,25 @@ function drawSpeaker(x, y, muted) {
   else { ctx.strokeStyle = DATA.pal.maroon; ctx.beginPath(); ctx.arc(x + 6, y, 10, -0.9, 0.9); ctx.stroke(); ctx.beginPath(); ctx.arc(x + 6, y, 18, -0.9, 0.9); ctx.stroke(); }
   ctx.restore();
 }
+function drawPauseBtn(x, y, paused, t) {
+  const hov = dist(view.mx, view.my, x, y) < 26;
+  ctx.save(); circ(x, y, 24); fs(paused ? '#7fb069' : hov ? 'rgba(74,26,26,0.15)' : 'rgba(0,0,0,0)', 4, DATA.pal.maroon);
+  if (paused) { ctx.beginPath(); ctx.moveTo(x - 7, y - 12); ctx.lineTo(x + 12, y); ctx.lineTo(x - 7, y + 12); ctx.closePath(); fs(DATA.pal.maroon); }
+  else { rr(x - 10, y - 12, 7, 24, 2); fs(DATA.pal.maroon); rr(x + 3, y - 12, 7, 24, 2); fs(DATA.pal.maroon); }
+  ctx.restore();
+}
+function drawPaused(rt) {
+  ctx.fillStyle = 'rgba(10,5,4,0.72)'; ctx.fillRect(0, 90, 1920, 950);
+  const w = 820, h = 420, x = 960 - w / 2, y = 290, pulse = 0.5 + 0.5 * Math.sin(rt * 2.4);
+  ctx.save(); ctx.shadowBlur = 30 + pulse * 20; ctx.shadowColor = '#9fd07a'; rr(x, y, w, h, 28); ctx.fillStyle = 'rgba(20,8,8,0.96)'; ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = '#b8e09a'; ctx.stroke(); ctx.restore();
+  if (artReady('logo')) { const im = ART.logo, lw = 360, lh = lw * im.naturalHeight / im.naturalWidth; ctx.save(); ctx.globalAlpha = 0.85 + pulse * 0.15; ctx.drawImage(im, 960 - lw / 2, y + 22, lw, lh); ctx.restore(); }
+  // big pause glyph + word
+  ctx.save(); ctx.shadowBlur = 24; ctx.shadowColor = '#f0b050'; rr(700, y + 170, 34, 110, 8); fs('#fef9e5', 5, '#f3c878'); rr(752, y + 170, 34, 110, 8); fs('#fef9e5', 5, '#f3c878'); ctx.restore();
+  ctx.save(); ctx.shadowBlur = 30; ctx.shadowColor = '#f0b050'; T('PAUSED', 1060, y + 226, 120, '#fef9e5', 'center', { w: 700, sw: 10, sc: '#4a1a1a' }); ctx.restore();
+  const n = heldChat.length;
+  T(n ? n + ' chat message' + (n === 1 ? '' : 's') + ' held - they play when the game resumes' : 'Chat is held while paused - commands play when the game resumes', 960, y + 330, 26, '#e0b45c', 'center', { w: 700, sw: 5 });
+  T('Croww will be right back  \u2022  P / Esc or the pause button to resume', 960, y + 372, 22, '#bfae86', 'center', { w: 600, stroke: false });
+}
 function drawTopBar(t) {
   const P = DATA.pal;
   ctx.fillStyle = P.cream; ctx.fillRect(0, 0, 1920, 90);
@@ -29,8 +48,9 @@ function drawTopBar(t) {
   const st = Kick.status, tm = testModeActive();
   const lc = st === 'live' ? '#3fae3a' : st === 'connecting' ? '#e0a020' : st === 'error' ? '#c0302a' : '#9c8a68';
   ctx.save(); ctx.shadowBlur = st === 'live' ? 14 : 0; ctx.shadowColor = lc; circ(1530, 46, 12 + (st === 'live' ? Math.sin(t * 4) * 1.5 : 0)); fs(lc, 3, P.maroon); ctx.restore();
-  T(st === 'live' ? 'LIVE CHAT  #' + settings.channel : st === 'connecting' ? 'CONNECTING\u2026' : 'CHAT OFFLINE', 1552, 32, 24, P.maroon, 'left', { w: 700, stroke: false });
-  T(tm ? 'TEST MODE (BOTS)' : st === 'live' ? Kick.msgs + ' msgs read' : 'press S to connect', 1552, 62, 19, tm ? P.tan : P.olive, 'left', { w: 500, stroke: false });
+  T(fit(st === 'live' ? 'LIVE  #' + settings.channel : st === 'connecting' ? 'CONNECTING\u2026' : 'CHAT OFFLINE', 22, 178, 700), 1552, 32, 22, P.maroon, 'left', { w: 700, stroke: false });
+  T(fit(tm ? 'TEST MODE (BOTS)' : st === 'live' ? Kick.msgs + ' msgs read' : 'press S to connect', 19, 170, 500), 1552, 62, 19, tm ? P.tan : P.olive, 'left', { w: 500, stroke: false });
+  drawPauseBtn(1762, 46, G.paused, t);
   drawSpeaker(1822, 46, settings.muted);
   drawGear(1884, 46, 22, t);
 }
@@ -48,7 +68,8 @@ function drawSidebar(t) {
     T(tag[0], 340, y - 7, 18, tag[1], 'right', { w: 900 });
   });
   T('Cooldown: ' + settings.userCooldown + 's per chatter', 185, 468, 20, '#fef9e5', 'center', { w: 800, stroke: false });
-  T('Chat minions: ' + chatLoad() + ' / ' + settings.globalCap + (G.chatQueue.length ? '   (' + G.chatQueue.length + ' queued)' : ''), 185, 493, 17, '#bfae86', 'center', { w: 700, stroke: false });
+  const nAct = activeChatters(), gps = goldPerSec(nAct);
+  T(fit('Minions ' + chatLoad() + '/' + settings.globalCap + (G.chatQueue.length ? ' (' + G.chatQueue.length + ' queued)' : '') + '  \u2022  ' + nAct + ' chatting  \u2022  +' + gps.toFixed(1) + 'g/s', 17, 336, 700), 185, 493, 17, gps > DATA.economy.trickle + 0.05 ? '#e0c878' : '#bfae86', 'center', { w: 700, stroke: false });
   panel(12, 520, 346, 86, G.bossReady ? '#ff4060' : '#6b4a32');
   const hpul = G.bossReady ? 1 + Math.sin(t * 8) * 0.08 : 1 + (G.hype / DATA.chat.hypeMax) * 0.06 * Math.sin(t * 4);
   drawEmoteImg('crowwHype', 20 - (hpul - 1) * 30, 524 - (hpul - 1) * 30, 60 * hpul, G.bossReady ? Math.sin(t * 10) * 0.12 : 0);
@@ -347,7 +368,7 @@ function render(t) {
   drawMenu(t);   // last of the in-game layers: the build ring is never hidden under side panels / banners
   if (G.phase === 'results') drawResults();
   drawTitle(t);
-  if (G.paused) { ctx.fillStyle = 'rgba(12,6,5,0.6)'; ctx.fillRect(0, 90, 1920, 950); T('PAUSED', 960, 500, 110, '#fff', 'center', { w: 900, sw: 14 }); T('press P or Esc to resume', 960, 580, 32, '#e9dfc4', 'center'); }
+  if (G.paused) { drawPaused(performance.now() / 1000); drawTopBar(t); }   // top bar stays visible so the pause button can be clicked
 }
 
 /* ===================================================================== input */
@@ -362,13 +383,14 @@ function inRect(p, b) { return b && p.x > b.x && p.x < b.x + b.w && p.y > b.y &&
 cv.addEventListener('mousemove', e => {
   const p = toGame(e); view.mx = p.x; view.my = p.y; if (!G) return;
   const h = hitTest(p.x, p.y); view.hoverPad = h.pad != null ? h.pad : -1;
-  const icon = dist(p.x, p.y, 1884, 46) < 30 || dist(p.x, p.y, 1826, 46) < 26;
+  const icon = dist(p.x, p.y, 1884, 46) < 30 || dist(p.x, p.y, 1826, 46) < 26 || dist(p.x, p.y, 1762, 46) < 26;
   cv.style.cursor = (h.btn || h.pad != null || icon || (G.phase === 'results' && inRect(p, G.resultsBtn))) ? 'pointer' : 'default';
 });
 cv.addEventListener('mousedown', e => {
   SFX.init(); const p = toGame(e); if (!G) return;
   if (view.titleT > 0) { view.titleT = Math.min(view.titleT, 0.8); return; }
   if (dist(p.x, p.y, 1884, 46) < 30) { toggleSettings(); return; }
+  if (dist(p.x, p.y, 1762, 46) < 26) { setPaused(!G.paused); return; }
   if (dist(p.x, p.y, 1826, 46) < 26) { settings.muted = !settings.muted; SFX.apply(); saveSettings(); syncSettingsUI(); return; }
   if (G.phase === 'results') { if (inRect(p, G.resultsBtn)) { newGame(); SFX.play('click'); } return; }
   if (G.phase === 'defeat' || G.paused) return;
@@ -403,7 +425,7 @@ window.addEventListener('keydown', e => {
   if (G.phase === 'results') { if (k === 'enter' || k === ' ') { newGame(); e.preventDefault(); } return; }
   if (k === 'escape' && view.settingsOpen) { toggleSettings(false); return; }
   if (k === 'escape' && view.sel >= 0 && !G.paused) { view.sel = -1; return; }
-  if (k === 'p' || k === 'escape') { G.paused = !G.paused; return; }
+  if (k === 'p' || k === 'escape') { setPaused(!G.paused); return; }
   if (G.paused) return;
   if (k === ' ') { e.preventDefault(); startWave(); return; }
   if (k === 'b') { deployCrowBoss(); return; }
@@ -424,7 +446,7 @@ function updateStatusUI() {
 }
 function syncSettingsUI() {
   $('sChannel').value = settings.channel; $('sRoom').value = settings.rooms[settings.channel] || '';
-  $('sTest').value = settings.testMode; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
+  $('sTest').value = settings.testMode; $('sSmall').value = settings.smallChat; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
   $('sClean').checked = settings.clean; $('sDiff').value = settings.difficulty; $('sCd').value = settings.userCooldown; $('sCap').value = settings.globalCap;
   $('bCrow').textContent = crowBossUnlocked() ? 'Crow Boss: unlocked (B to deploy)' : 'Unlock Crow Boss now'; $('sVol').value = settings.volume; $('vVol').textContent = settings.volume + '%'; $('sMute').checked = settings.muted; updateStatusUI();
 }
@@ -435,6 +457,7 @@ $('bConnect').onclick = () => { readChannel(); const v = $('sRoom').value.trim()
 $('bDisconnect').onclick = () => { settings.autoConnect = false; saveSettings(); Kick.disconnect(); };
 $('bLookup').onclick = async () => { readChannel(); delete settings.rooms[settings.channel]; $('sRoom').value = ''; const id = await Kick.lookup(); if (id) Kick.connect(); };
 $('sTest').onchange = () => { settings.testMode = normTestMode($('sTest').value, 'off'); if (!testModeActive()) stopBots(); clearTestParam(); saveSettings(); syncSettingsUI(); };
+$('sSmall').onchange = () => { settings.smallChat = $('sSmall').value; saveSettings(); };
 $('sNpc').onchange = () => { settings.npcWaves = $('sNpc').checked; saveSettings(); };
 $('sBotRate').oninput = () => { settings.botRate = +$('sBotRate').value; $('vBotRate').textContent = settings.botRate + ' msgs/min'; saveSettings(); };
 $('sClean').onchange = () => { settings.clean = $('sClean').checked; saveSettings(); };
@@ -455,12 +478,14 @@ window.addEventListener('resize', resize); resize();
 renderBG(); newGame(); syncSettingsUI();
 if (document.fonts) { document.fonts.load('700 40px Oswald'); document.fonts.load('400 20px Oswald'); }
 if (settings.autoConnect) Kick.connect(); else Kick.set('off', 'auto-connect off - press Connect');
-let last = performance.now(), manual = false;
+let last = performance.now(), manual = false, animT = 0;
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  const dt = Math.min(0.05, Math.max(0, (now - last) / 1000)); last = now;   // clamped: resuming (or a hidden tab) never jumps
   if (view.titleT > 0) view.titleT -= dt;
-  if (!manual && G && !G.paused) update(dt);
-  render(now / 1000);
+  const paused = G && G.paused;
+  if (!manual && G && !paused) update(dt);
+  if (!paused) animT += dt;                    // gameplay animations freeze with the game
+  render(animT);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -469,5 +494,5 @@ window.CC = {
   get G() { return G; }, DATA, settings, Kick, feed, onChat, testModeActive, stopBots, build, upgrade, startWave, newGame, toggleSettings,
   spawn(t, u) { spawnEnemy(t, u || 'tester', false); },
   step(sec, dt) { dt = dt || 1 / 30; const n = Math.round(sec / dt); for (let i = 0; i < n; i++) update(dt); },
-  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : performance.now() / 1000); }, forceVote() { G.voteClock = 0; }
+  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : animT); }, setPaused, heldChat, activeChatters, goldPerSec, smallChatK, forceVote() { G.voteClock = 0; }
 };

@@ -12,7 +12,10 @@ const DATA = {
   W: 1920, H: 1080,
   path: [[405,250],[560,250],[560,820],[820,820],[820,300],[1080,300],[1080,640],[1300,640],[1300,850],[1545,850]],
   pads: [[460,450],[690,560],[690,945],[950,470],[950,690],[1190,510],[1190,945],[1420,740]],
-  economy: { startGold: 160, trickle: 1.5, sellRefund: 0.6 },
+  economy: { startGold: 160, trickle: 1.5, sellRefund: 0.6,
+    // small-chat boost: fewer chatters = fewer chat enemies to farm, so the trickle (and a little kill gold) scales up.
+    // boost k = 1 at 0 active chatters, fading linearly to 0 at smallChatFull chatters.
+    smallChatFull: 8, smallTrickleBonus: 1.5, smallKillBonus: 0.1, activeWindow: 120 },
   chill: { max: 100, regenOnClear: 6 },
   wave: { firstBuild: 15, build: 12, baseDuration: 20, perWave: 2, maxDuration: 45, hpScale: 0.13, speedScale: 0.012 },
   difficulty: {
@@ -93,7 +96,7 @@ const SKEY = 'chatclash.settings.v1';
 const settings = Object.assign({
   channel: 'croww', rooms: Object.assign({}, DATA.kick.knownRooms), clean: false,
   userCooldown: DATA.chat.userCooldown, globalCap: DATA.chat.globalCap, difficulty: 'normal',
-  testMode: 'auto', botRate: DATA.test.botRate, npcWaves: true, volume: 60, muted: false, autoConnect: true
+  testMode: 'auto', botRate: DATA.test.botRate, npcWaves: true, smallChat: 'auto', volume: 60, muted: false, autoConnect: true
 }, (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })());
 settings.rooms = Object.assign({}, DATA.kick.knownRooms, settings.rooms || {});
 function saveSettings() { try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch (e) {} }
@@ -111,6 +114,7 @@ function normTestMode(v, fallback) {
 }
 settings.testMode = normTestMode(settings.testMode, 'auto');
 settings.npcWaves = settings.npcWaves !== false;
+if (!['auto', 'on', 'off'].includes(settings.smallChat)) settings.smallChat = 'auto';
 /* ?test= is a one-shot override for that page load. It is NOT allowed to beat a choice the streamer later makes
    in Settings: changing Test mode in-game strips the param from the URL (see clearTestParam) so a reload keeps it. */
 if (qs.has('test')) settings.testMode = normTestMode(qs.get('test'), settings.testMode);

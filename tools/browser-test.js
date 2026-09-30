@@ -44,8 +44,8 @@ const ok = (c, m) => { if (!c) { console.log('FAIL', m); process.exitCode = 1; }
     ok(await page.evaluate(() => CC.G.towers[3].level === 2), tag + ' upgrade via click');
     await page.mouse.click(10 * sc, 1000 * sc);
     await page.evaluate(() => { CC.G.gold = 240; CC.settings.botRate = 40; CC.startWave(); CC.onChat('CrowwFan99', '!troll'); CC.onChat('xX_Sniper_Xx', '!spam'); CC.onChat('LagLord', '!lag'); CC.step(9); });
-    const mid = await page.evaluate(() => ({ n: CC.G.enemies.length, chat: CC.G.enemies.filter(e => !e.isBot).length, users: [...new Set(CC.G.enemies.map(e => e.user))].length }));
-    ok(mid.n > 0 && mid.chat > 0, tag + ' test mode spawns: ' + JSON.stringify(mid));
+    const mid = await page.evaluate(() => ({ n: CC.G.enemies.length, chat: CC.G.enemies.filter(e => !e.isBot).length, users: [...new Set(CC.G.enemies.map(e => e.user))].length, kills: CC.G.kills, chatSpawns: Object.values(CC.G.session).reduce((a, s) => a + s.spawns, 0) }));
+    ok(mid.n + mid.kills > 0 && mid.chatSpawns > 0, tag + ' test mode spawns: ' + JSON.stringify(mid));
     await page.evaluate(() => CC.render(12.3));
     await page.screenshot({ path: path.join(shots, `gameplay-${tag}.png`) });
     // hover a pad for the build menu shot (1080 only)

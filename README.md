@@ -13,7 +13,9 @@ Croww is the defender at his gaming desk (with his crow on his shoulder), and **
 - **Rounds:** a short build phase, then a wave. **Space** starts the wave early. Gold comes from kills plus a steady trickle.
 - **You lose** when the **Chill Meter** hits 0. Score = waves survived. Waves are endless and escalate.
 - **Crow Boss (unlockable ally):** the first time you clear **wave 5** you get a *CROW BOSS UNLOCKED* banner (saved in this browser for good). Then press **B** or click the **CROW BOSS** button under the chill meter: the old smoking crow (coffee mug in Clean mode) flies onto the map for 12s, gives +8 chill, and every 1.4s blows a smoke ring that damages and slows (50%) every enemy within range. 90s cooldown. Settings also has an *Unlock Crow Boss now* button.
-- Keys: **S** settings (or the gear icon), **P / Esc** pause, **M** mute (or the speaker icon).
+- Keys: **S** settings (or the gear icon), **P / Esc** pause (or the pause button in the top bar), **M** mute (or the speaker icon).
+- **Pause** freezes everything (waves, enemies, towers, votes, hazards, hype, chatter cooldowns, Crow Boss). Chat that arrives while paused (Kick or the fake-chat box) is **held** and plays in order when you resume.
+- **Small chat mode** (Settings > Game, Auto by default): with fewer than 8 active chatters (people who chatted in the last 2 min) the gold trickle rises from 1.5/s up to 3.0/s at 0 chatters, and kill gold gets up to +10%. *Always on* = full boost, *Off* = flat 1.5/s.
 - Settings (saved in this browser): channel, chatroom id, Clean mode, cooldown per chatter, max chat enemies, difficulty, test mode and bot rate, a fake-chat box, volume and mute.
 
 ## For chat
