@@ -14,7 +14,8 @@ const DATA = {
   pads: [[460,450],[690,560],[690,945],[950,470],[950,690],[1190,510],[1190,945],[1420,740]],
   // income is mostly EARNED: kills + a wave-clear bonus (clearBase + clearPerWave * wave); the passive trickle is small.
   // killMult scales every enemy's gold; npcKillMult further scales the house NPCs (they are numerous).
-  economy: { startGold: 200, trickle: 0.4, sellRefund: 0.6, killMult: 0.55, npcKillMult: 1, chatKillMult: 1, clearBase: 15, clearPerWave: 12, copyStep: 0.25,
+  // earlyKillMult: waves 1..earlyKillWaves pay more per kill, easing down to killMult by earlyKillWaves+3; bossKillMult replaces killMult for bosses.
+  economy: { startGold: 280, trickle: 0.4, sellRefund: 0.6, killMult: 0.55, earlyKillMult: 0.9, earlyKillWaves: 3, bossKillMult: 0.75, npcKillMult: 1, chatKillMult: 1, chatKillMin: 0.3, chatKillFrom: 3, chatKillFull: 15, clearBase: 15, clearPerWave: 12, copyStep: 0.25,
     // small-chat boost: fewer chatters = fewer chat enemies to farm, so the trickle (and a little kill gold) scales up.
     // boost k = 1 at 0 active chatters, fading linearly to 0 at smallChatFull chatters.
     smallChatFull: 8, smallTrickleBonus: 0.1, smallKillBonus: 0.35, activeWindow: 120 },
@@ -27,22 +28,28 @@ const DATA = {
     normal: { hp: 1.0,  ai: 1.0,  gold: 1.0 },
     hard:   { hp: 1.3,  ai: 1.35, gold: 0.9 }
   },
-  ai: { name: 'NPC', budgetBase: 10, budgetPerWave: 7, chatDiscount: 1, minGap: 0.45, maxGap: 2.2, unlock: { troll: 2, spam: 2, lag: 3 } },
-  chat: { userCooldown: 20, globalCap: 30, queueStagger: 0.45, hypePerMsg: 1.2, hypePerCmd: 2.5, hypeMax: 100, hypeDecay: 0.35, feedLines: 7 },
+  // house NPC budget = budgetBase + budgetPerWave*(w-1) + budgetLate*(w-lateFrom)^2 once w > lateFrom (late waves ramp harder);
+  // every enemy's HP also compounds by (1+lateHp) per wave past lateFrom. chatDiscount: how much of a chat spawn's cost comes out of the NPC budget.
+  ai: { name: 'NPC', budgetBase: 10, budgetPerWave: 7, budgetLate: 2, lateFrom: 4, lateHp: 0.25, chatDiscount: 0.5, minGap: 0.45, maxGap: 2.2, unlock: { troll: 2, spam: 2, lag: 3 } },
+  // hype: only ACCEPTED commands add hype (a rejected one - cooldown / room full / locked - adds nothing). A bigger chat needs
+  // more hype: gain is divided by 1 + hypePerChatter * (active chatters beyond hypeFreeChatters). A chat !boss only unlocks
+  // during a wave from bossMinWave on, one chat boss alive at a time, and it takes a minion slot like everything else.
+  chat: { userCooldown: 20, globalCap: 30, queueStagger: 0.45, hypePerMsg: 1.2, hypePerCmd: 2.5, hypeMax: 100, hypeDecay: 0.35, feedLines: 7, hypeFreeChatters: 3, hypePerChatter: 0.1, bossMinWave: 3, bossHpPerChatter: 0.05 },
   enemies: {
     bug:   { label: 'BUG',   desc: 'weak & fast',          hp: 30,   speed: 125, gold: 6,   dmg: 5,  r: 17, cost: 1 },
     troll: { label: 'TROLL', desc: 'tanky',                hp: 240,  speed: 52,  gold: 18,  dmg: 14, r: 30, cost: 4 },
     lag:   { label: 'LAG',   desc: 'speeds up nearby',     hp: 95,   speed: 68,  gold: 12,  dmg: 8,  r: 22, cost: 3, aura: 150, auraBuff: 1.35 },
     spam:  { label: 'SPAM',  desc: 'swarm of 5 tiny',      hp: 13,   speed: 112, gold: 2,   dmg: 2,  r: 11, cost: 2, count: 5 },
-    boss:  { label: 'BOSS',  desc: 'unlocks at full HYPE', hp: 1700, speed: 36,  gold: 150, dmg: 35, r: 56, cost: 0 }
+    boss:  { label: 'BOSS',  desc: 'unlocks at full HYPE', hp: 1700, speed: 40,  gold: 150, dmg: 35, r: 56, cost: 0 }
   },
   towers: {
     hammer: { name: 'Mod Hammer',   key: '1', desc: 'Melee slam, splash damage',    cost: 100, range: 150, dmg: 34, rate: 1.1, splash: 95, color: '#ffb03a' },
-    laser:  { name: 'Ban Laser',    key: '2', desc: 'Single-target beam, high DPS', cost: 135, range: 270, dps: 44, color: '#ff3b5c' },
-    slow:   { name: 'Slow Mode',    key: '3', desc: 'Pulse slows everyone nearby',  cost: 120, range: 210, slow: 0.45, dur: 1.5, rate: 1.0, dmg: 5, color: '#5ab8ff' },
-    cannon: { name: 'Emote Cannon', key: '4', desc: 'Lobbed emotes, big AoE',       cost: 185, range: 290, dmg: 50, rate: 1.9, splash: 115, projSpeed: 1.1, color: '#ffd23f' }
+    laser:  { name: 'Ban Laser',    key: '2', desc: 'Single-target beam, high DPS', cost: 135, range: 270, dps: 50, color: '#ff3b5c' },
+    slow:   { name: 'Slow Mode',    key: '3', desc: 'Pulse slows everyone nearby',  cost: 120, range: 210, slow: 0.5, dur: 1.6, rate: 1.0, dmg: 8, color: '#5ab8ff' },
+    cannon: { name: 'Emote Cannon', key: '4', desc: 'Lobbed emotes, big AoE',       cost: 185, range: 290, dmg: 70, rate: 1.7, splash: 120, projSpeed: 1.1, color: '#ffd23f' }
   },
-  upgrade: { maxLevel: 3, costMult: [0, 1.0, 1.5], dmgMult: 1.55, rangeMult: 1.1, rateMult: 0.88, slowAdd: 0.08 },
+  // levels 1-5. Tiers 4-5 are steep late-game gold sinks. A 2nd copy (+25%) is better value than the first upgrade.
+  upgrade: { maxLevel: 5, costMult: [0, 1.2, 1.8, 3.0, 4.5], dmgMult: 1.4, rangeMult: 1.1, rateMult: 0.88, slowAdd: 0.08 },
   vote: { firstDelay: 40, interval: 60, duration: 20, hazardDuration: 25 },
   hazards: {
     fog:      { name: 'FOG',          desc: 'Towers lose 30% range',    range: 0.7, color: '#b9c3d6' },
@@ -53,11 +60,11 @@ const DATA = {
   test: { botRate: 24, botCount: 24 },
   // AFK / autoplay: the bot defends while Croww is away. think = seconds between decisions (a slower bot is easier
   // for chat to beat), maxLevel caps upgrades, restartAfter = seconds on the results screen before the next round.
-  afk: { think: 2.0, maxLevel: 2, reserve: 0, restartAfter: 12, earlyStart: 5, crowNear: 5, sessionCap: 200, watchdog: 240 },
+  afk: { think: 2.0, maxLevel: 3, reserve: 0, restartAfter: 12, earlyStart: 5, crowNear: 5, sessionCap: 200, watchdog: 240 },
   // desk mascot image (approved art) placement on the right panel
   deskArt: { x: 1485, y: 596, size: 450, face: [0.64, 0.33], screen: [0.1, 0.3, 0.26, 0.23] },
   // CROW BOSS: the old code-drawn smoking crow, an ally the streamer deploys (key B / the button under the chill meter)
-  crowBoss: { unlockWave: 5, cooldown: 90, duration: 12, puffEvery: 1.4, radius: 270, dmg: 45, dmgPerWave: 0.12, slow: 0.5, slowDur: 2.5, chillOnDeploy: 8, perch: [820, 560], scale: 0.62 },
+  crowBoss: { unlockWave: 5, cooldown: 90, duration: 12, puffEvery: 1.4, radius: 270, dmg: 45, dmgPerWave: 0.12, slow: 0.5, slowDur: 2.5, chillOnDeploy: 8, perch: [690, 720], scale: 0.62 },
   kick: { pusherKey: '32cbd69e4b950bf97679', cluster: 'us2', version: '8.4.0-rc2', knownRooms: { croww: '962037' }, pingEvery: 60 },
   fx: { shakePerDmg: 0.9, maxShake: 26 },
   ticker: 'HOW TO PLAY:  type  !bug  !troll  !lag  !spam  in chat to send attackers at Croww\'s desk   \u2022   fill the HYPE meter with chat to unlock  !boss   \u2022   every minute chat votes a hazard with  !1  !2  !3   \u2022   your name rides above your minion - hit the desk to top the TOP ATTACKERS board   \u2022   cooldown per chatter: {CD}s   \u2022   '

@@ -84,7 +84,7 @@ function drawSidebar(t) {
     const y = 180 + i * 58, D = DATA.enemies[ty], lock = ty === 'boss' && !G.bossReady;
     ctx.save(); if (lock) ctx.globalAlpha = 0.5; drawEnemyShape(ty, 48, y + 2, ty === 'boss' ? 17 : ty === 'troll' ? 16 : ty === 'spam' ? 11 : 14, t, 0, 0, false); ctx.restore();
     T('!' + ty, 84, y - 7, 32, lock ? '#9c8a68' : ty === 'boss' ? '#ff5070' : '#fff', 'left', { w: 900, sw: 6 });
-    T(ty === 'boss' ? (G.bossReady ? 'UNLOCKED! first one wins' : 'locked \u2022 fill the HYPE bar') : ty === 'spam' ? 'swarm of ' + spamCount(smallChatK()) + ' tiny' : D.desc, 84, y + 19, 17, ty === 'boss' && G.bossReady ? '#ffd23f' : '#d4c49c', 'left', { w: 700, stroke: false });
+    T(ty === 'boss' ? (G.bossReady ? 'UNLOCKED! first one wins' : G.hype >= DATA.chat.hypeMax ? fit(bossLockReason().replace('hype full - ', 'hype full \u2022 '), 17, 250, 700) : 'locked \u2022 fill the HYPE bar' + (G.wave < DATA.chat.bossMinWave ? ' (wave ' + DATA.chat.bossMinWave + '+)' : '')) : ty === 'spam' ? 'swarm of ' + spamCount(smallChatK()) + ' tiny' : D.desc, 84, y + 19, 17, ty === 'boss' && G.bossReady ? '#ffd23f' : '#d4c49c', 'left', { w: 700, stroke: false });
     const tag = { spam: ['x' + spamCount(smallChatK()), '#ff7ac8'], troll: ['TANK', '#9ad07e'], bug: ['FAST', '#9be34a'], lag: ['AURA', '#3fc8ff'], boss: [G.bossReady ? 'READY' : 'LOCK', G.bossReady ? '#ffd23f' : '#6e604a'] }[ty];
     T(tag[0], 340, y - 7, 18, tag[1], 'right', { w: 900 });
   });
@@ -95,7 +95,12 @@ function drawSidebar(t) {
     T('SMALL CHAT BOOST ' + Math.round(sk * 100) + '%', 256, 468, 15, '#ffd23f', 'center', { w: 900, stroke: false });
   } else T('Cooldown: ' + settings.userCooldown + 's per chatter', 185, 468, 20, '#fef9e5', 'center', { w: 800, stroke: false });
   const nAct = activeChatters(), gps = goldPerSec(nAct);
-  T(fit('Minions ' + chatLoad() + '/' + settings.globalCap + (G.chatQueue.length ? ' (' + G.chatQueue.length + ' queued)' : '') + '  \u2022  ' + nAct + ' chatting  \u2022  +' + gps.toFixed(1) + 'g/s', 17, 336, 700), 185, 493, 17, gps > DATA.economy.trickle + 0.05 ? '#e0c878' : '#bfae86', 'center', { w: 700, stroke: false });
+  // the gold/s part is never cut off: drop the queued count first, then shrink the font
+  const gTxt = '+' + gps.toFixed(1) + 'g/s', core = 'Minions ' + Math.min(chatLoad(), settings.globalCap) + '/' + settings.globalCap;
+  let sl = core + (G.chatQueue.length ? ' (' + G.chatQueue.length + ' queued)' : '') + '  \u2022  ' + nAct + ' chatting  \u2022  ' + gTxt, ssz = 17;
+  ctx.font = `700 ${ssz}px ${F}`; if (ctx.measureText(sl).width > 336) sl = core + '  \u2022  ' + nAct + ' chatting  \u2022  ' + gTxt;
+  while (ssz > 12 && (ctx.font = `700 ${ssz}px ${F}`, ctx.measureText(sl).width > 336)) ssz--;
+  T(sl, 185, 493, ssz, gps > DATA.economy.trickle + 0.05 ? '#e0c878' : '#bfae86', 'center', { w: 700, stroke: false });
   panel(12, 520, 346, 86, G.bossReady ? '#ff4060' : '#6b4a32');
   const hpul = G.bossReady ? 1 + Math.sin(t * 8) * 0.08 : 1 + (G.hype / DATA.chat.hypeMax) * 0.06 * Math.sin(t * 4);
   drawEmoteImg('crowwHype', 20 - (hpul - 1) * 30, 524 - (hpul - 1) * 30, 60 * hpul, G.bossReady ? Math.sin(t * 10) * 0.12 : 0);
@@ -299,7 +304,8 @@ function drawResults() {
   T('WAVE REACHED  ' + G.wave, 740, y + 240, 42, P.maroon, 'center', { w: 700, stroke: false });
   T('SCORE  ' + G.score, 1200, y + 240, 42, P.tan, 'center', { w: 700, stroke: false });
   const nb = G.score > G.bestAtStart;
-  T((nb ? 'NEW BEST!  ' : 'BEST: ') + Math.max(bestScore(), G.score) + ' WAVES SURVIVED', 960, y + 288, 24, nb ? P.forest : P.olive, 'center', { w: 600, stroke: false });
+  const bestN = Math.max(bestScore(), G.score);
+  T(bestN > 0 ? (nb ? 'NEW BEST!  ' : 'BEST: ') + bestN + ' WAVE' + (bestN === 1 ? '' : 'S') + ' CLEARED' : 'BEST: no waves cleared yet', 960, y + 288, 24, nb ? P.forest : P.olive, 'center', { w: 600, stroke: false });
   T('TOP ATTACKERS', 960, y + 344, 36, P.maroon, 'center', { w: 700, stroke: false });
   const top = Object.entries(G.session).sort((a, b) => b[1].dmg - a[1].dmg || b[1].spawns - a[1].spawns).slice(0, 5);
   if (!top.length) T('no chatters this session', 960, y + 420, 26, P.olive, 'center', { stroke: false });
@@ -308,7 +314,7 @@ function drawResults() {
     if (i === 0) { ctx.save(); ctx.translate(x + 150, yy); ctx.beginPath(); ctx.moveTo(-18, 10); ctx.lineTo(-20, -12); ctx.lineTo(-8, -2); ctx.lineTo(0, -16); ctx.lineTo(8, -2); ctx.lineTo(20, -12); ctx.lineTo(18, 10); ctx.closePath(); fs('#d9a441', 3, P.maroon); ctx.restore(); }
     T((i + 1) + '.', x + 190, yy, 32, P.olive, 'left', { w: 700, stroke: false });
     T(fit(u, 32, 380, 700), x + 240, yy, 32, userColor(u, true), 'left', { w: 700, stroke: false });
-    T(s.dmg + ' DMG  \u2022  ' + s.spawns + ' SPAWNS', x + w - 60, yy, 24, P.tan, 'right', { w: 600, stroke: false });
+    T(s.dmg + ' DMG  \u2022  ' + s.spawns + ' SPAWN' + (s.spawns === 1 ? '' : 'S'), x + w - 60, yy, 24, P.tan, 'right', { w: 600, stroke: false });
   });
   const bw = 380, bh = 78, bx = 960 - bw / 2, by = y + h - 118, hov = view.mx > bx && view.mx < bx + bw && view.my > by && view.my < by + bh;
   G.resultsBtn = { x: bx, y: by, w: bw, h: bh };

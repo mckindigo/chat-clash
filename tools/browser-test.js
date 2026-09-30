@@ -73,7 +73,8 @@ const ok = (c, m) => { if (!c) { console.log('FAIL', m); process.exitCode = 1; }
     await page.evaluate(() => { CC.G.hazard = { id: 'blackout', t: 20 }; CC.step(1); CC.G.banners = []; CC.render(33); });
     if (W === 1920) await page.screenshot({ path: path.join(shots, `hazard-blackout-${tag}.png`) });
     // boss via hype
-    await page.evaluate(() => { for (let i = 0; i < 90; i++) CC.onChat('hyper' + i, 'HYPE'); CC.onChat('BossSummoner', '!boss'); CC.step(4); CC.G.banners = []; });
+    // (chat bosses: wave 3+, only while a wave is running, one at a time, and they take a minion slot)
+    await page.evaluate(() => { const G = CC.G; G.wave = Math.max(G.wave, 3); if (G.phase !== 'wave') CC.startWave(); G.waveT = 1; G.waveDur = 40; G.enemies = []; G.release = []; G.chatQueue = []; for (let i = 0; i < 400 && !G.bossReady; i++) CC.onChat('hyper' + (i % 60), 'HYPE'); CC.onChat('BossSummoner', '!boss'); CC.step(4); CC.G.banners = []; });
     ok(await page.evaluate(() => CC.G.enemies.some(e => e.type === 'boss') || CC.G.chatQueue.some(q => q.type === 'boss') || CC.G.release.some(q => q.type === 'boss')), tag + ' boss unlocked by hype and spawned/queued');
     // low hp panic shot
     await page.evaluate(() => { CC.G.hazard = null; CC.G.chill = 36; CC.spawn('troll', 'BigHitter'); const e = CC.G.enemies[CC.G.enemies.length - 1]; e.d = 3000; e.hp = 1e9; CC.step(0.2); CC.step(0.35); CC.render(40); });

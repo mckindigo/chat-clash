@@ -73,7 +73,8 @@ const DATA = {
   pads: [[460,450],[690,560],[690,945],[950,470],[950,690],[1190,510],[1190,945],[1420,740]],
   // income is mostly EARNED: kills + a wave-clear bonus (clearBase + clearPerWave * wave); the passive trickle is small.
   // killMult scales every enemy's gold; npcKillMult further scales the house NPCs (they are numerous).
-  economy: { startGold: 200, trickle: 0.4, sellRefund: 0.6, killMult: 0.55, npcKillMult: 1, chatKillMult: 1, clearBase: 15, clearPerWave: 12, copyStep: 0.25,
+  // earlyKillMult: waves 1..earlyKillWaves pay more per kill, easing down to killMult by earlyKillWaves+3; bossKillMult replaces killMult for bosses.
+  economy: { startGold: 280, trickle: 0.4, sellRefund: 0.6, killMult: 0.55, earlyKillMult: 0.9, earlyKillWaves: 3, bossKillMult: 0.75, npcKillMult: 1, chatKillMult: 1, chatKillMin: 0.3, chatKillFrom: 3, chatKillFull: 15, clearBase: 15, clearPerWave: 12, copyStep: 0.25,
     // small-chat boost: fewer chatters = fewer chat enemies to farm, so the trickle (and a little kill gold) scales up.
     // boost k = 1 at 0 active chatters, fading linearly to 0 at smallChatFull chatters.
     smallChatFull: 8, smallTrickleBonus: 0.1, smallKillBonus: 0.35, activeWindow: 120 },
@@ -86,22 +87,28 @@ const DATA = {
     normal: { hp: 1.0,  ai: 1.0,  gold: 1.0 },
     hard:   { hp: 1.3,  ai: 1.35, gold: 0.9 }
   },
-  ai: { name: 'NPC', budgetBase: 10, budgetPerWave: 7, chatDiscount: 1, minGap: 0.45, maxGap: 2.2, unlock: { troll: 2, spam: 2, lag: 3 } },
-  chat: { userCooldown: 20, globalCap: 30, queueStagger: 0.45, hypePerMsg: 1.2, hypePerCmd: 2.5, hypeMax: 100, hypeDecay: 0.35, feedLines: 7 },
+  // house NPC budget = budgetBase + budgetPerWave*(w-1) + budgetLate*(w-lateFrom)^2 once w > lateFrom (late waves ramp harder);
+  // every enemy's HP also compounds by (1+lateHp) per wave past lateFrom. chatDiscount: how much of a chat spawn's cost comes out of the NPC budget.
+  ai: { name: 'NPC', budgetBase: 10, budgetPerWave: 7, budgetLate: 2, lateFrom: 4, lateHp: 0.25, chatDiscount: 0.5, minGap: 0.45, maxGap: 2.2, unlock: { troll: 2, spam: 2, lag: 3 } },
+  // hype: only ACCEPTED commands add hype (a rejected one - cooldown / room full / locked - adds nothing). A bigger chat needs
+  // more hype: gain is divided by 1 + hypePerChatter * (active chatters beyond hypeFreeChatters). A chat !boss only unlocks
+  // during a wave from bossMinWave on, one chat boss alive at a time, and it takes a minion slot like everything else.
+  chat: { userCooldown: 20, globalCap: 30, queueStagger: 0.45, hypePerMsg: 1.2, hypePerCmd: 2.5, hypeMax: 100, hypeDecay: 0.35, feedLines: 7, hypeFreeChatters: 3, hypePerChatter: 0.1, bossMinWave: 3, bossHpPerChatter: 0.05 },
   enemies: {
     bug:   { label: 'BUG',   desc: 'weak & fast',          hp: 30,   speed: 125, gold: 6,   dmg: 5,  r: 17, cost: 1 },
     troll: { label: 'TROLL', desc: 'tanky',                hp: 240,  speed: 52,  gold: 18,  dmg: 14, r: 30, cost: 4 },
     lag:   { label: 'LAG',   desc: 'speeds up nearby',     hp: 95,   speed: 68,  gold: 12,  dmg: 8,  r: 22, cost: 3, aura: 150, auraBuff: 1.35 },
     spam:  { label: 'SPAM',  desc: 'swarm of 5 tiny',      hp: 13,   speed: 112, gold: 2,   dmg: 2,  r: 11, cost: 2, count: 5 },
-    boss:  { label: 'BOSS',  desc: 'unlocks at full HYPE', hp: 1700, speed: 36,  gold: 150, dmg: 35, r: 56, cost: 0 }
+    boss:  { label: 'BOSS',  desc: 'unlocks at full HYPE', hp: 1700, speed: 40,  gold: 150, dmg: 35, r: 56, cost: 0 }
   },
   towers: {
     hammer: { name: 'Mod Hammer',   key: '1', desc: 'Melee slam, splash damage',    cost: 100, range: 150, dmg: 34, rate: 1.1, splash: 95, color: '#ffb03a' },
-    laser:  { name: 'Ban Laser',    key: '2', desc: 'Single-target beam, high DPS', cost: 135, range: 270, dps: 44, color: '#ff3b5c' },
-    slow:   { name: 'Slow Mode',    key: '3', desc: 'Pulse slows everyone nearby',  cost: 120, range: 210, slow: 0.45, dur: 1.5, rate: 1.0, dmg: 5, color: '#5ab8ff' },
-    cannon: { name: 'Emote Cannon', key: '4', desc: 'Lobbed emotes, big AoE',       cost: 185, range: 290, dmg: 50, rate: 1.9, splash: 115, projSpeed: 1.1, color: '#ffd23f' }
+    laser:  { name: 'Ban Laser',    key: '2', desc: 'Single-target beam, high DPS', cost: 135, range: 270, dps: 50, color: '#ff3b5c' },
+    slow:   { name: 'Slow Mode',    key: '3', desc: 'Pulse slows everyone nearby',  cost: 120, range: 210, slow: 0.5, dur: 1.6, rate: 1.0, dmg: 8, color: '#5ab8ff' },
+    cannon: { name: 'Emote Cannon', key: '4', desc: 'Lobbed emotes, big AoE',       cost: 185, range: 290, dmg: 70, rate: 1.7, splash: 120, projSpeed: 1.1, color: '#ffd23f' }
   },
-  upgrade: { maxLevel: 3, costMult: [0, 1.0, 1.5], dmgMult: 1.55, rangeMult: 1.1, rateMult: 0.88, slowAdd: 0.08 },
+  // levels 1-5. Tiers 4-5 are steep late-game gold sinks. A 2nd copy (+25%) is better value than the first upgrade.
+  upgrade: { maxLevel: 5, costMult: [0, 1.2, 1.8, 3.0, 4.5], dmgMult: 1.4, rangeMult: 1.1, rateMult: 0.88, slowAdd: 0.08 },
   vote: { firstDelay: 40, interval: 60, duration: 20, hazardDuration: 25 },
   hazards: {
     fog:      { name: 'FOG',          desc: 'Towers lose 30% range',    range: 0.7, color: '#b9c3d6' },
@@ -112,11 +119,11 @@ const DATA = {
   test: { botRate: 24, botCount: 24 },
   // AFK / autoplay: the bot defends while Croww is away. think = seconds between decisions (a slower bot is easier
   // for chat to beat), maxLevel caps upgrades, restartAfter = seconds on the results screen before the next round.
-  afk: { think: 2.0, maxLevel: 2, reserve: 0, restartAfter: 12, earlyStart: 5, crowNear: 5, sessionCap: 200, watchdog: 240 },
+  afk: { think: 2.0, maxLevel: 3, reserve: 0, restartAfter: 12, earlyStart: 5, crowNear: 5, sessionCap: 200, watchdog: 240 },
   // desk mascot image (approved art) placement on the right panel
   deskArt: { x: 1485, y: 596, size: 450, face: [0.64, 0.33], screen: [0.1, 0.3, 0.26, 0.23] },
   // CROW BOSS: the old code-drawn smoking crow, an ally the streamer deploys (key B / the button under the chill meter)
-  crowBoss: { unlockWave: 5, cooldown: 90, duration: 12, puffEvery: 1.4, radius: 270, dmg: 45, dmgPerWave: 0.12, slow: 0.5, slowDur: 2.5, chillOnDeploy: 8, perch: [820, 560], scale: 0.62 },
+  crowBoss: { unlockWave: 5, cooldown: 90, duration: 12, puffEvery: 1.4, radius: 270, dmg: 45, dmgPerWave: 0.12, slow: 0.5, slowDur: 2.5, chillOnDeploy: 8, perch: [690, 720], scale: 0.62 },
   kick: { pusherKey: '32cbd69e4b950bf97679', cluster: 'us2', version: '8.4.0-rc2', knownRooms: { croww: '962037' }, pingEvery: 60 },
   fx: { shakePerDmg: 0.9, maxShake: 26 },
   ticker: 'HOW TO PLAY:  type  !bug  !troll  !lag  !spam  in chat to send attackers at Croww\'s desk   \u2022   fill the HYPE meter with chat to unlock  !boss   \u2022   every minute chat votes a hazard with  !1  !2  !3   \u2022   your name rides above your minion - hit the desk to top the TOP ATTACKERS board   \u2022   cooldown per chatter: {CD}s   \u2022   '
@@ -279,11 +286,13 @@ function stat(tab, u) { return tab[u] || (tab[u] = { dmg: 0, spawns: 0 }); }
 function chatLoad() { return G.enemies.filter(e => !e.isBot && !e.dead).length + [...G.release, ...G.chatQueue].reduce((a, q) => a + (DATA.enemies[q.type].count || 1), 0); }
 
 /* ===================================================================== waves */
+function npcBudget(w) { const A = DATA.ai, l = Math.max(0, w - A.lateFrom); return A.budgetBase + A.budgetPerWave * (w - 1) + A.budgetLate * l * l; }
+function lateHpMult(w) { return Math.pow(1 + DATA.ai.lateHp, Math.max(0, w - DATA.ai.lateFrom)); }
 function waveDuration(w) { return Math.min(DATA.wave.maxDuration, DATA.wave.baseDuration + DATA.wave.perWave * (w - 1)); }
 function startWave() {
   if (G.phase !== 'build') return;
   G.phase = 'wave'; G.waveT = 0; G.waveDur = waveDuration(G.wave); G.waveStats = {};
-  G.aiBudget = (DATA.ai.budgetBase + DATA.ai.budgetPerWave * (G.wave - 1)) * diff().ai;
+  G.aiBudget = npcBudget(G.wave) * diff().ai;
   G.aiGap = clamp(G.waveDur * 0.8 / Math.max(1, G.aiBudget / 1.8), DATA.ai.minGap, DATA.ai.maxGap);
   G.aiTimer = 0.8;
   for (const q of G.chatQueue) { G.release.push(q); G.aiBudget = Math.max(0, G.aiBudget - DATA.enemies[q.type].cost * DATA.ai.chatDiscount); }
@@ -317,7 +326,8 @@ function defeat() {
 function spawnEnemy(type, user, isBot, src, boost) {
   boost = boost || 0;   // small-chat boost for chat commands: tougher enemies, more !spam minions
   const D = DATA.enemies[type], n = type === 'spam' ? spamCount(boost) : (D.count || 1);
-  const hpM = (1 + DATA.wave.hpScale * (G.wave - 1)) * diff().hp * (1 + (DATA.smallChat.hpBoost[type] || 0) * boost), spM = 1 + DATA.wave.speedScale * (G.wave - 1);
+  const late = lateHpMult(G.wave) * (type === 'boss' && !isBot ? 1 + DATA.chat.bossHpPerChatter * Math.max(0, activeChatters() - DATA.chat.hypeFreeChatters) : 1);   // compounding late-wave toughness; a big chat's boss is beefier
+  const hpM = (1 + DATA.wave.hpScale * (G.wave - 1)) * late * diff().hp * (1 + (DATA.smallChat.hpBoost[type] || 0) * boost), spM = 1 + DATA.wave.speedScale * (G.wave - 1);
   for (let i = 0; i < n; i++) {
     G.enemies.push({ id: ++G.eid, type, user, isBot, boosted: boost > 0.05, src: src || (isBot ? 'npc' : 'chat'), lead: i === 0, n, hp: D.hp * hpM, maxHp: D.hp * hpM, speed: D.speed * spM * rand(0.95, 1.05), d: -i * 26 - 10, x: -99, y: -99, ang: 0, r: D.r,
       slowT: 0, slowAmt: 0, flash: 0, dead: false, cur: D.speed, wob: Math.random() * 10, dmgAcc: 0 });
@@ -332,7 +342,7 @@ function dmgEnemy(e, amt, src) {
   if (src !== 'laser') SFX.play('hit');
   if (e.hp <= 0) {
     e.dead = true; G.kills++;
-    const g = Math.round(DATA.enemies[e.type].gold * DATA.economy.killMult * (e.isBot ? DATA.economy.npcKillMult : DATA.economy.chatKillMult) * diff().gold * killGoldMult()); G.gold += g;
+    const g = Math.round(DATA.enemies[e.type].gold * (e.type === 'boss' ? DATA.economy.bossKillMult : waveKillMult(G.wave) * (e.isBot ? DATA.economy.npcKillMult : chatKillMult())) * diff().gold * killGoldMult()); G.gold += g;
     G.texts.push({ x: e.x, y: e.y - 20, s: '+' + g, c: '#ffd23f', t: 0, dur: 0.9, size: 26, vy: -60 });
     const col = { bug: '#9be34a', troll: '#72b35e', lag: '#3fc8ff', spam: '#ff7ac8', boss: '#ff4060' }[e.type];
     const cnt = e.type === 'boss' ? 60 : e.type === 'troll' ? 22 : 12;
@@ -359,14 +369,14 @@ function deskHit(e) {
   if (G.chill <= 0) defeat();
 }
 function tryCommand(user, type, src) {
-  if (!G || G.phase === 'defeat' || G.phase === 'results') return;
-  if (src === 'bot' && !testModeActive()) return;
+  if (!G || G.phase === 'defeat' || G.phase === 'results') return false;
+  if (src === 'bot' && !testModeActive()) return false;
   const key = user.toLowerCase(), now = G.time;   // game clock: cooldowns freeze while paused
   const cd = cooldowns[key] || 0;
-  if (now < cd) { addFeed(user, '!' + type + '  (cooldown ' + Math.ceil(cd - now) + 's)', 'cd'); return; }
-  if (type === 'boss' && !G.bossReady) { addFeed(user, '!boss  (locked - hype ' + Math.floor(G.hype) + '%)', 'lock'); return; }
+  if (now < cd) { addFeed(user, '!' + type + '  (cooldown ' + Math.ceil(cd - now) + 's)', 'cd'); return false; }
+  if (type === 'boss' && !G.bossReady) { addFeed(user, '!boss  (' + bossLockReason() + ')', 'lock'); return false; }
   const n = DATA.enemies[type].count || 1;
-  if (chatLoad() + n > settings.globalCap && type !== 'boss') { addFeed(user, '!' + type + '  (room is full!)', 'cap'); return; }
+  if (chatLoad() + n > settings.globalCap) { addFeed(user, '!' + type + '  (room is full!)', 'cap'); return false; }
   cooldowns[key] = now + effCooldown();
   if (type === 'boss') { G.bossReady = false; G.hype = 0; }
   else addHype(DATA.chat.hypePerCmd);
@@ -376,12 +386,28 @@ function tryCommand(user, type, src) {
   else G.chatQueue.push({ type, user, src, boost });
   addFeed(user, '!' + type + (live ? '  \u2714 sent' : '  \u2714 queued'), 'ok');
   SFX.play('chat');
+  return true;
 }
 function addHype(v) {
   if (!G || G.bossReady || G.phase === 'results' || G.phase === 'defeat') return;
-  G.hype = Math.min(DATA.chat.hypeMax, G.hype + v * hypeGainMult());
-  if (G.hype >= DATA.chat.hypeMax) { G.bossReady = true; banner('BOSS UNLOCKED', 'first chatter to type !boss summons it', '#ff4060', 3, 'crowwHype'); SFX.play('unlock'); }
+  G.hype = Math.min(DATA.chat.hypeMax, G.hype + v * hypeGainMult() / hypeNeedMult());
+  checkBossUnlock();
 }
+/* a chat boss is only allowed during a wave (chat spawns still open), from DATA.chat.bossMinWave on, one at a time */
+function chatBossAlive() { return G.enemies.some(e => e.type === 'boss' && !e.isBot && !e.dead) || G.release.some(q => q.type === 'boss') || G.chatQueue.some(q => q.type === 'boss'); }
+function bossAllowed() { return G.phase === 'wave' && G.waveT < G.waveDur && G.wave >= DATA.chat.bossMinWave && !chatBossAlive(); }
+function bossLockReason() {
+  if (G.hype < DATA.chat.hypeMax) return 'locked - hype ' + Math.floor(G.hype) + '%';
+  if (G.wave < DATA.chat.bossMinWave) return 'hype full - bosses start on wave ' + DATA.chat.bossMinWave;
+  if (chatBossAlive()) return 'hype full - one boss at a time';
+  return 'hype full - waits for the next wave';
+}
+function checkBossUnlock() {
+  if (G.bossReady && !bossAllowed()) { G.bossReady = false; return; }   // wave ended / a boss is out: hype stays full, re-unlocks later
+  if (!G.bossReady && G.hype >= DATA.chat.hypeMax && bossAllowed()) { G.bossReady = true; banner('BOSS UNLOCKED', 'first chatter to type !boss summons it', '#ff4060', 3, 'crowwHype'); SFX.play('unlock'); }
+}
+/* bigger chats need more hype for a boss: 1 + hypePerChatter per active chatter beyond hypeFreeChatters */
+function hypeNeedMult(n) { const C = DATA.chat; return 1 + C.hypePerChatter * Math.max(0, (n == null ? activeChatters() : n) - C.hypeFreeChatters); }
 
 /* ===================================================================== chat input */
 /* PAUSE: while paused, incoming chat (Kick, fake-chat box) is HELD and replayed in order on resume, so nobody's
@@ -412,6 +438,10 @@ function effCooldown(k) { k = k == null ? smallChatK() : k; const base = setting
 function hypeGainMult(k) { return 1 + DATA.smallChat.hypeGain * (k == null ? smallChatK() : k); }
 function spamCount(k) { return DATA.enemies.spam.count + Math.round(DATA.smallChat.spamExtra * k); }
 function goldPerSec(n) { return DATA.economy.trickle + DATA.economy.smallTrickleBonus * smallChatK(n); }
+function waveKillMult(w) { const E = DATA.economy, over = w - E.earlyKillWaves; return over <= 0 ? E.earlyKillMult : Math.max(E.killMult, E.earlyKillMult - (E.earlyKillMult - E.killMult) * over / 3); }
+/* chat-spawned kills pay less in a big chat (a big chat sends far more enemies = far more gold, which would cancel its pressure):
+   chatKillMult up to chatKillFrom active chatters, easing to chatKillMin by chatKillFull */
+function chatKillMult(n) { const E = DATA.economy; n = n == null ? activeChatters() : n; return E.chatKillMult * lerp(1, E.chatKillMin, clamp((n - E.chatKillFrom) / (E.chatKillFull - E.chatKillFrom), 0, 1)); }
 function killGoldMult(n) { return 1 + DATA.economy.smallKillBonus * smallChatK(n); }
 function onChat(user, text, src) {
   if (!user || text == null || !G) return;
@@ -419,12 +449,12 @@ function onChat(user, text, src) {
   lastSeen[String(user).toLowerCase()] = gameClock;
   text = String(text).replace(/\[emote:\d+:([^\]]*)\]/g, '$1').trim();
   if (!text) return;
-  addHype(DATA.chat.hypePerMsg);
   const cmd = text.split(/\s+/)[0].toLowerCase();
   const m = /^!([123])$/.exec(cmd);
-  if (m) { castVote(user, +m[1] - 1); return; }
+  if (m) { addHype(DATA.chat.hypePerMsg); castVote(user, +m[1] - 1); return; }
   const c = /^!(bug|troll|lag|spam|boss)$/.exec(cmd);
-  if (c) { tryCommand(user, c[1], src); return; }
+  if (c) { if (tryCommand(user, c[1], src) && c[1] !== 'boss') addHype(DATA.chat.hypePerMsg); return; }   // rejected commands add no hype
+  addHype(DATA.chat.hypePerMsg);
   addFeed(user, text, 'msg');
 }
 function castVote(user, i) {
@@ -650,12 +680,19 @@ function targetFor(tw, range) {
   for (const e of G.enemies) if (!e.dead && e.d >= 0 && dist(e.x, e.y, tw.x, tw.y) <= range + e.r * 0.5 && (!best || e.d > best.d)) best = e;
   return best;
 }
+/* cannon: aim at the enemy with the most HP packed around it (within the splash), ties -> furthest along the path */
+function clusterTarget(tw, range, splash) {
+  const inR = G.enemies.filter(e => !e.dead && e.d >= 0 && dist(e.x, e.y, tw.x, tw.y) <= range + e.r * 0.5);
+  let best = null, bv = -1;
+  for (const e of inR) { let v = 0; for (const o of inR) if (dist(e.x, e.y, o.x, o.y) <= splash * 0.7) v += Math.min(o.hp, 200); v += e.d * 0.01; if (v > bv) { bv = v; best = e; } }
+  return best;
+}
 function updateTowers(dt) {
   for (const tw of G.towers) {
     if (!tw) continue;
     const S = tStats(tw); tw.cd -= dt; tw.anim = Math.max(0, tw.anim - dt * 3); tw.recoil = Math.max(0, tw.recoil - dt * 4); tw.pulse = Math.max(0, tw.pulse - dt * 2); tw.place = Math.max(0, tw.place - dt * 3);
     tw.beam = null;
-    const tg = targetFor(tw, S.range);
+    let tg = targetFor(tw, S.range);
     if (tg) { const a = Math.atan2(tg.y - tw.y, tg.x - tw.x); let da = a - tw.ang; while (da > Math.PI) da -= 6.283; while (da < -Math.PI) da += 6.283; tw.ang += da * Math.min(1, dt * 12); }
     if (tw.type === 'laser') {
       if (tg) { tw.beam = tg; dmgEnemy(tg, S.dps * dt, 'laser'); SFX.play('laser'); if (Math.random() < 0.5) G.parts.push({ x: tg.x + rand(-8, 8), y: tg.y + rand(-8, 8), vx: rand(-60, 60), vy: rand(-120, -20), t: 0, dur: 0.3, size: rand(3, 6), c: '#ff9aa8', g: 0 }); }
@@ -673,6 +710,7 @@ function updateTowers(dt) {
         SFX.play('slow');
       } else if (tw.type === 'cannon') {
         tw.cd = S.rate; tw.recoil = 1;
+        const cg = clusterTarget(tw, S.range, S.splash) || tg; tg = cg;
         const dd = dist(tw.x, tw.y, tg.x, tg.y), dur = clamp(dd / 650, 0.35, 0.75) / DATA.towers.cannon.projSpeed;
         const p = pathAt(tg.d + tg.cur * dur);
         G.projs.push({ x0: tw.x + Math.cos(tw.ang) * 40, y0: tw.y + Math.sin(tw.ang) * 40, x1: p.x, y1: p.y, t: 0, dur, dmg: S.dmg, splash: S.splash, face: Math.floor(Math.random() * 4), h: 90 + dd * 0.25 });
@@ -773,7 +811,8 @@ function update(dt) {
   const playing = G.phase === 'build' || G.phase === 'wave';
   if (playing) {
     G.gold += goldPerSec() * dt;
-    if (!G.bossReady) G.hype = Math.max(0, G.hype - DATA.chat.hypeDecay * (1 - DATA.smallChat.hypeDecayCut * smallChatK()) * dt);
+    if (!G.bossReady && G.hype < DATA.chat.hypeMax) G.hype = Math.max(0, G.hype - DATA.chat.hypeDecay * (1 - DATA.smallChat.hypeDecayCut * smallChatK()) * dt);
+    checkBossUnlock();
     G.voteClock -= dt;
     if (G.voteClock <= 0 && !G.vote) { startVote(); G.voteClock = DATA.vote.interval; }
     if (G.vote) { G.vote.t += dt; if (G.vote.t >= DATA.vote.duration) endVote(); }
@@ -910,12 +949,14 @@ function drawEnemies(t) {
   }
   const list = G.enemies.filter(e => e.d > -40).sort((a, b) => a.y - b.y);
   for (const e of list) { ell(e.x, e.y + e.r * 0.85, e.r * 0.9, e.r * 0.3); fs('rgba(0,0,0,0.35)'); drawEnemyShape(e.type, e.x, e.y, e.r, t + e.wob, e.ang, e.flash, e.slowT > 0); }
+  // name tags: bosses always; otherwise only the 8 chat leads furthest along, fading in after they leave the spawn
+  const tagged = new Set(G.enemies.filter(e => e.lead && !e.isBot && e.type !== 'boss' && e.d > 0).sort((a, b) => b.d - a.d).slice(0, 8));
   for (const e of list) {
     if (e.hp < e.maxHp) { const w = Math.max(34, e.r * 2), y = e.y - e.r - (e.type === 'troll' ? 44 : e.type === 'boss' ? 70 : 14); rr(e.x - w / 2 - 2, y - 2, w + 4, 10, 4); fs(O); rr(e.x - w / 2, y, Math.max(1, w * clamp(e.hp / e.maxHp, 0, 1)), 6, 3); fs(e.hp / e.maxHp > 0.5 ? '#8fca6a' : e.hp / e.maxHp > 0.25 ? '#ffd23f' : '#ff5070'); }
     if (e.lead) {
-      const y = e.y - e.r - (e.type === 'troll' ? 62 : e.type === 'boss' ? 92 : 32);
-      if (e.isBot) T('npc', e.x, y, 16, '#9c8a68', 'center', { sw: 4 });
-      else { const sz = e.type === 'boss' ? 30 : 22, s = fit(e.user, sz, 220) + (e.n > 1 ? ' x' + e.n : ''); ctx.font = `700 ${sz}px ${F}`; const lx = Math.max(e.x, 382 + ctx.measureText(s).width / 2); T(s, lx, y, sz, userColor(e.user), 'center', { sw: 6, w: 700 }); }
+      const y = Math.max(122, e.y - e.r - (e.type === 'troll' ? 62 : e.type === 'boss' ? 92 : 32));   // never up in the top bar
+      if (e.isBot) { if (e.d > 0 && e.d < 400) T('npc', e.x, y, 16, '#9c8a68', 'center', { sw: 4 }); }
+      else if (e.type === 'boss' || tagged.has(e)) { ctx.save(); ctx.globalAlpha = e.type === 'boss' ? 1 : clamp((e.d - 20) / 90, 0, 1); const sz = e.type === 'boss' ? 30 : 22, s = fit(e.user, sz, 220) + (e.n > 1 ? ' x' + e.n : ''); ctx.font = `700 ${sz}px ${F}`; const lx = Math.max(e.x, 382 + ctx.measureText(s).width / 2); T(s, lx, y, sz, userColor(e.user), 'center', { sw: 6, w: 700 }); ctx.restore(); }
     }
   }
 }
@@ -1079,7 +1120,7 @@ function drawCrowBoss(t) {
   CROW_SPRITE.body(t, { eyes: 'chill', beak: pose.k > 0.8 ? 0.5 : 0, bob: Math.sin(t * 3) * 3, legs: true });
   CROW_SPRITE.arm(pose, t);
   ctx.restore();
-  T('CROW BOSS  ' + Math.ceil(cb.t) + 's', p.x, p.y - 190 * p.s / D.scale, 28, '#9fd07a', 'center', { w: 900, sw: 6 });
+  T('CROW BOSS  ' + Math.ceil(cb.t) + 's', p.x, p.y + 162 * p.s / D.scale, 26, '#9fd07a', 'center', { w: 900, sw: 6 });
 }
 function drawCrowBossButton(t) {
   const st = crowBossState(), cb = G.crowBoss, D = DATA.crowBoss, x = 1535, y = 362, w = 350, h = 62;
@@ -1248,7 +1289,7 @@ function drawSidebar(t) {
     const y = 180 + i * 58, D = DATA.enemies[ty], lock = ty === 'boss' && !G.bossReady;
     ctx.save(); if (lock) ctx.globalAlpha = 0.5; drawEnemyShape(ty, 48, y + 2, ty === 'boss' ? 17 : ty === 'troll' ? 16 : ty === 'spam' ? 11 : 14, t, 0, 0, false); ctx.restore();
     T('!' + ty, 84, y - 7, 32, lock ? '#9c8a68' : ty === 'boss' ? '#ff5070' : '#fff', 'left', { w: 900, sw: 6 });
-    T(ty === 'boss' ? (G.bossReady ? 'UNLOCKED! first one wins' : 'locked \u2022 fill the HYPE bar') : ty === 'spam' ? 'swarm of ' + spamCount(smallChatK()) + ' tiny' : D.desc, 84, y + 19, 17, ty === 'boss' && G.bossReady ? '#ffd23f' : '#d4c49c', 'left', { w: 700, stroke: false });
+    T(ty === 'boss' ? (G.bossReady ? 'UNLOCKED! first one wins' : G.hype >= DATA.chat.hypeMax ? fit(bossLockReason().replace('hype full - ', 'hype full \u2022 '), 17, 250, 700) : 'locked \u2022 fill the HYPE bar' + (G.wave < DATA.chat.bossMinWave ? ' (wave ' + DATA.chat.bossMinWave + '+)' : '')) : ty === 'spam' ? 'swarm of ' + spamCount(smallChatK()) + ' tiny' : D.desc, 84, y + 19, 17, ty === 'boss' && G.bossReady ? '#ffd23f' : '#d4c49c', 'left', { w: 700, stroke: false });
     const tag = { spam: ['x' + spamCount(smallChatK()), '#ff7ac8'], troll: ['TANK', '#9ad07e'], bug: ['FAST', '#9be34a'], lag: ['AURA', '#3fc8ff'], boss: [G.bossReady ? 'READY' : 'LOCK', G.bossReady ? '#ffd23f' : '#6e604a'] }[ty];
     T(tag[0], 340, y - 7, 18, tag[1], 'right', { w: 900 });
   });
@@ -1259,7 +1300,12 @@ function drawSidebar(t) {
     T('SMALL CHAT BOOST ' + Math.round(sk * 100) + '%', 256, 468, 15, '#ffd23f', 'center', { w: 900, stroke: false });
   } else T('Cooldown: ' + settings.userCooldown + 's per chatter', 185, 468, 20, '#fef9e5', 'center', { w: 800, stroke: false });
   const nAct = activeChatters(), gps = goldPerSec(nAct);
-  T(fit('Minions ' + chatLoad() + '/' + settings.globalCap + (G.chatQueue.length ? ' (' + G.chatQueue.length + ' queued)' : '') + '  \u2022  ' + nAct + ' chatting  \u2022  +' + gps.toFixed(1) + 'g/s', 17, 336, 700), 185, 493, 17, gps > DATA.economy.trickle + 0.05 ? '#e0c878' : '#bfae86', 'center', { w: 700, stroke: false });
+  // the gold/s part is never cut off: drop the queued count first, then shrink the font
+  const gTxt = '+' + gps.toFixed(1) + 'g/s', core = 'Minions ' + Math.min(chatLoad(), settings.globalCap) + '/' + settings.globalCap;
+  let sl = core + (G.chatQueue.length ? ' (' + G.chatQueue.length + ' queued)' : '') + '  \u2022  ' + nAct + ' chatting  \u2022  ' + gTxt, ssz = 17;
+  ctx.font = `700 ${ssz}px ${F}`; if (ctx.measureText(sl).width > 336) sl = core + '  \u2022  ' + nAct + ' chatting  \u2022  ' + gTxt;
+  while (ssz > 12 && (ctx.font = `700 ${ssz}px ${F}`, ctx.measureText(sl).width > 336)) ssz--;
+  T(sl, 185, 493, ssz, gps > DATA.economy.trickle + 0.05 ? '#e0c878' : '#bfae86', 'center', { w: 700, stroke: false });
   panel(12, 520, 346, 86, G.bossReady ? '#ff4060' : '#6b4a32');
   const hpul = G.bossReady ? 1 + Math.sin(t * 8) * 0.08 : 1 + (G.hype / DATA.chat.hypeMax) * 0.06 * Math.sin(t * 4);
   drawEmoteImg('crowwHype', 20 - (hpul - 1) * 30, 524 - (hpul - 1) * 30, 60 * hpul, G.bossReady ? Math.sin(t * 10) * 0.12 : 0);
@@ -1463,7 +1509,8 @@ function drawResults() {
   T('WAVE REACHED  ' + G.wave, 740, y + 240, 42, P.maroon, 'center', { w: 700, stroke: false });
   T('SCORE  ' + G.score, 1200, y + 240, 42, P.tan, 'center', { w: 700, stroke: false });
   const nb = G.score > G.bestAtStart;
-  T((nb ? 'NEW BEST!  ' : 'BEST: ') + Math.max(bestScore(), G.score) + ' WAVES SURVIVED', 960, y + 288, 24, nb ? P.forest : P.olive, 'center', { w: 600, stroke: false });
+  const bestN = Math.max(bestScore(), G.score);
+  T(bestN > 0 ? (nb ? 'NEW BEST!  ' : 'BEST: ') + bestN + ' WAVE' + (bestN === 1 ? '' : 'S') + ' CLEARED' : 'BEST: no waves cleared yet', 960, y + 288, 24, nb ? P.forest : P.olive, 'center', { w: 600, stroke: false });
   T('TOP ATTACKERS', 960, y + 344, 36, P.maroon, 'center', { w: 700, stroke: false });
   const top = Object.entries(G.session).sort((a, b) => b[1].dmg - a[1].dmg || b[1].spawns - a[1].spawns).slice(0, 5);
   if (!top.length) T('no chatters this session', 960, y + 420, 26, P.olive, 'center', { stroke: false });
@@ -1472,7 +1519,7 @@ function drawResults() {
     if (i === 0) { ctx.save(); ctx.translate(x + 150, yy); ctx.beginPath(); ctx.moveTo(-18, 10); ctx.lineTo(-20, -12); ctx.lineTo(-8, -2); ctx.lineTo(0, -16); ctx.lineTo(8, -2); ctx.lineTo(20, -12); ctx.lineTo(18, 10); ctx.closePath(); fs('#d9a441', 3, P.maroon); ctx.restore(); }
     T((i + 1) + '.', x + 190, yy, 32, P.olive, 'left', { w: 700, stroke: false });
     T(fit(u, 32, 380, 700), x + 240, yy, 32, userColor(u, true), 'left', { w: 700, stroke: false });
-    T(s.dmg + ' DMG  \u2022  ' + s.spawns + ' SPAWNS', x + w - 60, yy, 24, P.tan, 'right', { w: 600, stroke: false });
+    T(s.dmg + ' DMG  \u2022  ' + s.spawns + ' SPAWN' + (s.spawns === 1 ? '' : 'S'), x + w - 60, yy, 24, P.tan, 'right', { w: 600, stroke: false });
   });
   const bw = 380, bh = 78, bx = 960 - bw / 2, by = y + h - 118, hov = view.mx > bx && view.mx < bx + bw && view.my > by && view.my < by + bh;
   G.resultsBtn = { x: bx, y: by, w: bw, h: bh };
