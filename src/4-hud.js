@@ -295,6 +295,7 @@ function render(t) {
   }
   drawPadsTowers(t);
   drawEnemies(t);
+  drawCrowBoss(t);
   for (const p of G.projs) { const k = clamp(p.t, 0, 1), gx = lerp(p.x0, p.x1, k), gy = lerp(p.y0, p.y1, k); ell(gx, gy, 14, 5); fs('rgba(0,0,0,0.3)'); drawEmote(gx, gy - Math.sin(k * Math.PI) * p.h, 17, p.face, k * 8); }
   for (const r of G.rings) { const k = r.t / r.dur; ctx.save(); circ(r.x, r.y, lerp(r.r, r.r2, ease(k))); ctx.globalAlpha = 1 - k; ctx.lineWidth = r.w * (1 - k) + 1; ctx.strokeStyle = r.c; ctx.stroke(); ctx.restore(); }
   for (const p of G.parts) { ctx.globalAlpha = 1 - p.t / p.dur; ctx.fillStyle = p.c; const s = p.size * (1 - p.t / p.dur * 0.5); ctx.fillRect(p.x - s / 2, p.y - s / 2, s, s); } ctx.globalAlpha = 1;
@@ -316,6 +317,7 @@ function render(t) {
   drawDrain(t);
   drawTicker(t);
   if (G.phase === 'results') drawResults();
+  drawTitle(t);
   if (G.paused) { ctx.fillStyle = 'rgba(12,6,5,0.6)'; ctx.fillRect(0, 90, 1920, 950); T('PAUSED', 960, 500, 110, '#fff', 'center', { w: 900, sw: 14 }); T('press P or Esc to resume', 960, 580, 32, '#e9dfc4', 'center'); }
 }
 
@@ -336,10 +338,12 @@ cv.addEventListener('mousemove', e => {
 });
 cv.addEventListener('mousedown', e => {
   SFX.init(); const p = toGame(e); if (!G) return;
+  if (view.titleT > 0) { view.titleT = Math.min(view.titleT, 0.8); return; }
   if (dist(p.x, p.y, 1884, 46) < 30) { toggleSettings(); return; }
   if (dist(p.x, p.y, 1826, 46) < 26) { settings.muted = !settings.muted; SFX.apply(); saveSettings(); syncSettingsUI(); return; }
   if (G.phase === 'results') { if (inRect(p, G.resultsBtn)) { newGame(); SFX.play('click'); } return; }
   if (G.phase === 'defeat' || G.paused) return;
+  if (inRect(p, G.crowBossBtn)) { deployCrowBoss(); return; }
   if (e.button === 2) { view.sel = -1; return; }
   const h = hitTest(p.x, p.y);
   if (h.btn) {
@@ -363,6 +367,7 @@ window.addEventListener('keydown', e => {
   const tag = (document.activeElement && document.activeElement.tagName) || '';
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') { if (e.key === 'Escape') document.activeElement.blur(); return; }
   const k = e.key.toLowerCase();
+  if (view.titleT > 0.8) view.titleT = 0.8;
   if (k === 's') { toggleSettings(); return; }
   if (k === 'm') { settings.muted = !settings.muted; SFX.apply(); saveSettings(); syncSettingsUI(); return; }
   if (!G) return;
@@ -372,6 +377,7 @@ window.addEventListener('keydown', e => {
   if (k === 'p' || k === 'escape') { G.paused = !G.paused; return; }
   if (G.paused) return;
   if (k === ' ') { e.preventDefault(); startWave(); return; }
+  if (k === 'b') { deployCrowBoss(); return; }
   if (view.sel >= 0 && G.phase !== 'defeat') {
     const tw = G.towers[view.sel], idx = ['1', '2', '3', '4'].indexOf(k);
     if (!tw && idx >= 0) { if (build(view.sel, Object.keys(DATA.towers)[idx])) view.sel = -1; }
@@ -389,9 +395,9 @@ function updateStatusUI() {
 }
 function syncSettingsUI() {
   $('sChannel').value = settings.channel; $('sRoom').value = settings.rooms[settings.channel] || '';
-  $('sTest').value = settings.testMode; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
+  $('sTest').value = settings.testMode; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
   $('sClean').checked = settings.clean; $('sDiff').value = settings.difficulty; $('sCd').value = settings.userCooldown; $('sCap').value = settings.globalCap;
-  $('sVol').value = settings.volume; $('vVol').textContent = settings.volume + '%'; $('sMute').checked = settings.muted; updateStatusUI();
+  $('bCrow').textContent = crowBossUnlocked() ? 'Crow Boss: unlocked (B to deploy)' : 'Unlock Crow Boss now'; $('sVol').value = settings.volume; $('vVol').textContent = settings.volume + '%'; $('sMute').checked = settings.muted; updateStatusUI();
 }
 function readChannel() { const ch = $('sChannel').value.trim().toLowerCase().replace(/^https?:\/\/(www\.)?kick\.com\//, '').replace(/[^a-z0-9_\-]/g, ''); if (ch && ch !== settings.channel) { settings.channel = ch; $('sRoom').value = settings.rooms[ch] || ''; } }
 $('sChannel').addEventListener('change', () => { readChannel(); saveSettings(); });
@@ -399,7 +405,8 @@ $('sRoom').addEventListener('change', () => { const v = $('sRoom').value.trim().
 $('bConnect').onclick = () => { readChannel(); const v = $('sRoom').value.trim().replace(/\D/g, ''); if (v) settings.rooms[settings.channel] = v; settings.autoConnect = true; saveSettings(); Kick.connect(); };
 $('bDisconnect').onclick = () => { settings.autoConnect = false; saveSettings(); Kick.disconnect(); };
 $('bLookup').onclick = async () => { readChannel(); delete settings.rooms[settings.channel]; $('sRoom').value = ''; const id = await Kick.lookup(); if (id) Kick.connect(); };
-$('sTest').onchange = () => { settings.testMode = $('sTest').value; saveSettings(); };
+$('sTest').onchange = () => { settings.testMode = normTestMode($('sTest').value, 'off'); if (!testModeActive()) stopBots(); clearTestParam(); saveSettings(); syncSettingsUI(); };
+$('sNpc').onchange = () => { settings.npcWaves = $('sNpc').checked; saveSettings(); };
 $('sBotRate').oninput = () => { settings.botRate = +$('sBotRate').value; $('vBotRate').textContent = settings.botRate + ' msgs/min'; saveSettings(); };
 $('sClean').onchange = () => { settings.clean = $('sClean').checked; saveSettings(); };
 $('sDiff').onchange = () => { settings.difficulty = $('sDiff').value; saveSettings(); };
@@ -407,6 +414,7 @@ $('sCd').onchange = () => { settings.userCooldown = clamp(+$('sCd').value || 0, 
 $('sCap').onchange = () => { settings.globalCap = clamp(+$('sCap').value || 1, 1, 300); saveSettings(); syncSettingsUI(); };
 $('sVol').oninput = () => { settings.volume = +$('sVol').value; $('vVol').textContent = settings.volume + '%'; SFX.init(); SFX.apply(); saveSettings(); };
 $('sMute').onchange = () => { settings.muted = $('sMute').checked; SFX.apply(); saveSettings(); };
+$('bCrow').onclick = () => { if (!unlockCrowBoss('unlocked in Settings')) addFeed('CHAT CLASH', 'Crow Boss is already unlocked - press B', 'ok'); syncSettingsUI(); };
 $('bRestart').onclick = () => { newGame(); toggleSettings(false); };
 $('bClose').onclick = () => toggleSettings(false);
 function sendFake() { const u = $('fUser').value.trim() || 'Croww', m = $('fMsg').value.trim(); if (!m) return; onChat(u, m, 'manual'); $('fMsg').value = ''; }
@@ -421,6 +429,7 @@ if (settings.autoConnect) Kick.connect(); else Kick.set('off', 'auto-connect off
 let last = performance.now(), manual = false;
 function frame(now) {
   const dt = Math.min(0.05, (now - last) / 1000); last = now;
+  if (view.titleT > 0) view.titleT -= dt;
   if (!manual && G && !G.paused) update(dt);
   render(now / 1000);
   requestAnimationFrame(frame);
@@ -428,8 +437,8 @@ function frame(now) {
 requestAnimationFrame(frame);
 /* console / test hooks */
 window.CC = {
-  get G() { return G; }, DATA, settings, Kick, feed, onChat, build, upgrade, startWave, newGame, toggleSettings,
+  get G() { return G; }, DATA, settings, Kick, feed, onChat, testModeActive, stopBots, build, upgrade, startWave, newGame, toggleSettings,
   spawn(t, u) { spawnEnemy(t, u || 'tester', false); },
   step(sec, dt) { dt = dt || 1 / 30; const n = Math.round(sec / dt); for (let i = 0; i < n; i++) update(dt); },
-  manual(v) { manual = v; }, render(t) { render(t != null ? t : performance.now() / 1000); }, forceVote() { G.voteClock = 0; }
+  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : performance.now() / 1000); }, forceVote() { G.voteClock = 0; }
 };

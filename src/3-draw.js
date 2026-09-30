@@ -238,32 +238,74 @@ function drawArm(p, t) {
   for (let i = 0; i < 3; i++) { ell(p.hx - 2 - i * 2, p.hy - 8 + i * 9, 12, 7, -0.4 + i * 0.3); fs('#1f1a1a', 4); }
   ctx.restore();
 }
-const MASCOT = {
-  kind: 'procedural-crow',
-  pose: () => heldPose(),                      // hand position / puff-cycle state
-  tip: () => heldTip(),                        // where ambient smoke/steam is emitted
-  body: (t, o) => drawCrow(t, o),              // layer 1: body + head + headset (behind desk)
-  arm: (pose, t) => drawArm(pose, t),          // layer 2: arm + joint/mug (in front of desk)
-  held: (pose, t, ground) => drawHeld(pose, t, ground), // held item alone (used when it drops on defeat)
-  smoke: (s, r, a) => { circ(s.x, s.y, r); ctx.fillStyle = s.steam ? `rgba(245,248,240,${a * 0.8})` : `rgba(215,205,190,${a})`; ctx.fill(); } // layer 3: one puff
+/* The old code-drawn crow now lives on as the CROW BOSS ally (see 2-game.js). Same layers as before. */
+const CROW_SPRITE = {
+  body: (t, o) => drawCrow(t, o),              // body + head + headset
+  arm: (pose, t) => drawArm(pose, t),          // arm + joint (Clean mode: coffee mug)
+  held: (pose, t, ground) => drawHeld(pose, t, ground)
 };
-function drawNeon(t) {
-  const P = DATA.pal, x = 1545, y = 108, w = 330, h = 122;
-  const flick = (Math.sin(t * 13) > 0.97 || (t % 9 > 8.6 && t % 9 < 8.75)) ? 0.3 : 1;
-  ctx.save(); rr(x, y, w, h, 18); ctx.fillStyle = 'rgba(58,18,18,0.92)'; ctx.fill();
-  ctx.shadowBlur = 18; ctx.shadowColor = '#9fd07a'; ctx.lineWidth = 5; ctx.strokeStyle = '#b8e09a'; ctx.stroke();
-  ctx.font = `700 96px ${F}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  const letters = 'CROWW'.split(''), widths = letters.map(L => ctx.measureText(L).width), tot = widths.reduce((a, b) => a + b, 0) + 8 * 4;
-  let lx = x + w / 2 - tot / 2;
-  letters.forEach((L, i) => {
-    ctx.globalAlpha = i === 3 ? flick : 1;
-    const cx = lx + widths[i] / 2, cy = y + h / 2 + 4;
-    ctx.shadowBlur = 34; ctx.shadowColor = '#f0b050'; ctx.lineWidth = 5; ctx.strokeStyle = '#f3c878'; ctx.strokeText(L, cx, cy);
-    ctx.shadowBlur = 10; ctx.fillStyle = P.cream; ctx.fillText(L, cx, cy);
-    lx += widths[i] + 8;
-  });
+/* Desk mascot: the approved image brand/mascot-croww-desk.png (embedded from assets/). Drawn as one image, never
+   redrawn/restyled. Clean mode is a no-op for it (it holds a controller, no joint/mug to swap). */
+const MASCOT = {
+  kind: 'image',
+  smoke: (s, r, a) => { circ(s.x, s.y, r); ctx.fillStyle = s.steam ? `rgba(245,248,240,${a * 0.8})` : `rgba(215,205,190,${a})`; ctx.fill(); }
+};
+function deskFace() { const A = DATA.deskArt; return [A.x + A.face[0] * A.size, A.y + A.face[1] * A.size]; }
+function drawCrowBoss(t) {
+  const cb = G.crowBoss; if (!cb.active) return;
+  const p = crowBossPos(), pose = crowBossPose(), D = DATA.crowBoss, el = D.duration - cb.t;
+  // aura on the perch
+  const k = clamp(el / 0.7, 0, 1) * clamp(cb.t / 0.7, 0, 1);
+  ctx.save(); ctx.globalAlpha = 0.14 * k; circ(p.x, p.y, D.radius); fs('#9fd07a'); ctx.globalAlpha = 0.5 * k; ctx.setLineDash([14, 12]); ctx.lineDashOffset = -t * 40; ctx.lineWidth = 4; ctx.strokeStyle = '#9fd07a'; ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.translate(p.x, p.y + Math.sin(t * 5) * 6); ctx.scale(p.s, p.s); ctx.translate(-1800, -640);
+  CROW_SPRITE.body(t, { eyes: 'chill', beak: pose.k > 0.8 ? 0.5 : 0, bob: Math.sin(t * 3) * 3, legs: true });
+  CROW_SPRITE.arm(pose, t);
   ctx.restore();
+  T('CROW BOSS  ' + Math.ceil(cb.t) + 's', p.x, p.y - 190 * p.s / D.scale, 28, '#9fd07a', 'center', { w: 900, sw: 6 });
+}
+function drawCrowBossButton(t) {
+  const st = crowBossState(), cb = G.crowBoss, D = DATA.crowBoss, x = 1535, y = 362, w = 350, h = 62;
+  const ready = st === 'ready', hov = view.mx > x && view.mx < x + w && view.my > y && view.my < y + h;
+  ctx.save();
+  if (ready || cb.flash) { ctx.shadowBlur = 18 + Math.sin(t * 6) * 8; ctx.shadowColor = '#9fd07a'; }
+  rr(x, y, w, h, 14); fs(st === 'locked' ? 'rgba(30,20,16,0.9)' : ready ? (hov ? '#4f7a3c' : '#2f4a26') : 'rgba(40,17,15,0.92)', 4, ready ? '#b8e09a' : '#6b4a32');
+  ctx.restore();
+  // mini crow head icon
+  ctx.save(); circ(x + 34, y + 31, 25); ctx.clip(); ctx.translate(x + 38, y + 31); ctx.scale(0.36, 0.36); ctx.translate(-1760, -505); if (st === 'locked') ctx.globalAlpha = 0.45;
+  CROW_SPRITE.body(t, { eyes: st === 'locked' ? 'squeeze' : 'chill' }); ctx.restore();
+  const title = 'CROW BOSS  [B]';
+  const sub = st === 'locked' ? 'locked \u2022 survive wave ' + D.unlockWave + ' to unlock' : st === 'active' ? 'on the field \u2022 ' + Math.ceil(cb.t) + 's' : st === 'cooldown' ? 'recharging \u2022 ' + Math.ceil(cb.cd) + 's' : st === 'ready' ? 'READY \u2022 click or press B to deploy' : 'available during build / waves';
+  T(title, x + 70, y + 22, 24, st === 'locked' ? '#9c8a68' : '#fef9e5', 'left', { w: 900, sw: 5 });
+  T(sub, x + 70, y + 46, 17, ready ? '#b8e09a' : st === 'locked' ? '#8a7a60' : '#e0b45c', 'left', { w: 700, stroke: false });
+  if (st === 'cooldown') { rr(x + 70, y + 56, (w - 90) * (1 - cb.cd / D.cooldown), 3, 1); fs('#e0b45c'); }
+  G.crowBossBtn = { x, y, w, h };
+}
+function drawNeon(t) {
+  const x = 1545, y = 108, w = 330, h = 122;
+  const flick = (Math.sin(t * 13) > 0.97 || (t % 9 > 8.6 && t % 9 < 8.75)) ? 0.55 : 1;
+  ctx.save(); rr(x, y, w, h, 18); ctx.fillStyle = 'rgba(20,8,8,0.96)'; ctx.fill();   // dark backing: the logo glow is semi-transparent
+  ctx.shadowBlur = 18; ctx.shadowColor = '#9fd07a'; ctx.lineWidth = 5; ctx.strokeStyle = '#b8e09a'; ctx.stroke(); ctx.restore();
+  if (artReady('logo')) {
+    const im = ART.logo, lw = w - 14, lh = lw * im.naturalHeight / im.naturalWidth;
+    ctx.save(); ctx.globalAlpha = flick; ctx.drawImage(im, x + (w - lw) / 2, y + (h - lh) / 2, lw, lh); ctx.restore();
+  } else {
+    ctx.save(); ctx.globalAlpha = flick; T('CROWW', x + w / 2, y + h / 2 + 4, 96, DATA.pal.cream, 'center', { w: 700, sw: 5, sc: '#f3c878' }); ctx.restore();
+  }
   for (let i = 0; i < 9; i++) { const bx = 1530 + i * 46, by = 255 + Math.sin((bx - 1510) / 400 * Math.PI) * 18 + 6; const on = 0.5 + 0.5 * Math.sin(t * 2 + i * 1.7); ctx.save(); ctx.shadowBlur = 12 * on; ctx.shadowColor = ['#f0b050', '#9fd07a', '#fef9e5'][i % 3]; circ(bx, by, 5); fs(['#f3d9a0', '#cfe6b8', '#fef9e5'][i % 3]); ctx.restore(); }
+}
+/* first-load title card (dark background so the semi-transparent neon glow reads) */
+function drawTitle(t) {
+  if (!(view.titleT > 0)) return;
+  const k = clamp(view.titleT / 0.8, 0, 1), a = ease(k);
+  ctx.save(); ctx.globalAlpha = a;
+  ctx.fillStyle = 'rgba(8,4,4,0.93)'; ctx.fillRect(0, 0, 1920, 1080);
+  const g = ctx.createRadialGradient(960, 420, 50, 960, 420, 700); g.addColorStop(0, 'rgba(240,176,80,0.16)'); g.addColorStop(1, 'rgba(240,176,80,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, 1920, 1080);
+  if (artReady('logo')) { const im = ART.logo, lw = 900, lh = lw * im.naturalHeight / im.naturalWidth; ctx.drawImage(im, 960 - lw / 2, 300 - lh / 2, lw, lh); }
+  T('CHAT CLASH', 960, 520, 110, '#fef9e5', 'center', { w: 700, sw: 12 });
+  T("Croww's Desk Defense  \u2022  chat spawns the enemies", 960, 610, 36, '#e0b45c', 'center', { w: 700, sw: 6 });
+  if (artReady('mascot')) ctx.drawImage(ART.mascot, 960 - 170, 660, 340, 340);
+  T('click or press any key', 960, 1020, 24, '#bfae86', 'center', { w: 600, stroke: false });
+  ctx.restore();
 }
 function drawChillMeter(t) {
   const x = 1535, y = 300, w = 350, h = 34, f = clamp(G.chill / DATA.chill.max, 0, 1);
@@ -275,75 +317,30 @@ function drawChillMeter(t) {
   if (f <= 0.3 && f > 0 && Math.sin(t * 10) > 0) { rr(x - 4, y, w + 8, h + 8, 12); ctx.lineWidth = 4; ctx.strokeStyle = '#ff5070'; ctx.stroke(); }
 }
 function drawDesk(t) {
-  const C = G.crow, f = clamp(G.chill / DATA.chill.max, 0, 1), def = G.phase === 'defeat' || G.phase === 'results', dT = def ? (G.phase === 'results' ? 9 : G.defeatT) : 0;
-  const g = ctx.createRadialGradient(1640, 660, 20, 1640, 660, 380); g.addColorStop(0, G.deskFlash > 0 ? 'rgba(255,80,110,0.35)' : 'rgba(127,176,105,0.22)'); g.addColorStop(1, 'rgba(127,176,105,0)'); ctx.fillStyle = g; ctx.fillRect(1500, 300, 420, 740);
-  // chair
-  ctx.save();
-  if (def) { const k = ease(dT / 0.6); ctx.translate(k * 40, 0); ctx.translate(1815, 990); ctx.rotate(k * 0.42); ctx.translate(-1815, -990); }
-  ctx.lineCap = 'round'; ctx.strokeStyle = O; ctx.lineWidth = 12; line(1812, 900, 1812, 975); ctx.lineWidth = 10; line(1760, 985, 1864, 985); ctx.strokeStyle = '#4a3a2a'; ctx.lineWidth = 5; line(1760, 985, 1864, 985);
-  circ(1760, 995, 9); fs('#222', 4); circ(1864, 995, 9); fs('#222', 4); circ(1812, 997, 9); fs('#222', 4);
-  rr(1734, 420, 156, 400, 34); const cg = ctx.createLinearGradient(1734, 0, 1890, 0); cg.addColorStop(0, '#4a1a1a'); cg.addColorStop(1, '#5e2424'); fs(cg, 6);
-  ctx.save(); ctx.shadowBlur = 10; ctx.shadowColor = '#7fb069'; rr(1748, 450, 12, 340, 6); fs('#7fb069'); rr(1864, 450, 12, 340, 6); fs('#7fb069'); ctx.restore();
-  rr(1768, 432, 96, 46, 18); fs('#6b2c2c', 5);
-  ctx.restore();
-  const hpose = MASCOT.pose();
+  const C = G.crow, A = DATA.deskArt, f = clamp(G.chill / DATA.chill.max, 0, 1), def = G.phase === 'defeat' || G.phase === 'results', dT = def ? (G.phase === 'results' ? 9 : G.defeatT) : 0;
+  const g = ctx.createRadialGradient(1700, 820, 20, 1700, 820, 380); g.addColorStop(0, G.deskFlash > 0 ? 'rgba(255,80,110,0.35)' : 'rgba(127,176,105,0.22)'); g.addColorStop(1, 'rgba(127,176,105,0)'); ctx.fillStyle = g; ctx.fillRect(1500, 440, 420, 600);
+  drawCrowBossButton(t);
   const flinch = C.hitT > 0 ? Math.sin(C.hitT * 55) * 9 * C.hitT : 0;
-  const eyes = C.hitT > 0.25 ? 'squeeze' : f <= 0.3 ? 'panic' : 'chill';
-  const falling = def && dT > 0.3;
-  if (!falling) {
-    ctx.save(); const rise = def ? -ease(dT / 0.3) * 30 : 0; ctx.translate(flinch, rise + (C.hitT > 0 ? -C.hitT * 10 : 0));
-    MASCOT.body(t, { eyes: def ? 'panic' : eyes, beak: C.coughT > 0 ? Math.abs(Math.sin(C.coughT * 14)) : (C.ringT > 1.6 ? 0.6 : 0), bob: Math.sin(t * 1.6) * 3, ruffle: f <= 0.3 || def });
-    ctx.restore();
-  }
-  // desk
-  ctx.save(); ctx.lineJoin = 'round';
-  rr(1540, 920, 26, 88, 6); fs('#1c140f', 5); rr(1872, 920, 26, 88, 6); fs('#1c140f', 5);
-  rr(1522, 786, 380, 142, 10); const dg = ctx.createLinearGradient(0, 786, 0, 928); dg.addColorStop(0, '#3a2a20'); dg.addColorStop(1, '#241a14'); fs(dg, 6);
-  ctx.save(); ctx.shadowBlur = 14; ctx.shadowColor = '#e0b45c'; ctx.fillStyle = G.deskFlash > 0 ? '#ff5070' : '#e0b45c'; ctx.fillRect(1530, 794, 364, 5); ctx.restore();
-  rr(1508, 762, 404, 30, 8); fs('#5a4430', 6); ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(1516, 766, 388, 5);
-  T("CROWW'S DESK", 1712, 862, 26, 'rgba(255,255,255,0.14)', 'center', { stroke: false, w: 900 });
-  rr(1690, 748, 110, 16, 4); fs('#1e1210', 4);
-  for (let i = 0; i < 8; i++) { ctx.fillStyle = `hsl(${(t * 80 + i * 40) % 360},90%,60%)`; ctx.fillRect(1697 + i * 12.5, 752, 9, 7); }
-  if (!def) { ell(1872, 760, 24, 7); fs(settings.clean ? '#7fb069' : '#606070', 4); }
+  const [fx, fy] = deskFace();
+  ctx.save();
+  ctx.beginPath(); ctx.rect(1496, 440, 424, 600); ctx.clip();   // keep the falling image inside the right panel
+  // loss = simple equivalent of "falls out of his chair": the whole image hops, tips back and drops
+  let rot = 0, dy = 0;
+  if (def) { const k = ease(clamp((dT - 0.15) / 0.9, 0, 1)); rot = -k * 0.36; dy = -Math.sin(clamp(dT / 0.4, 0, 1) * Math.PI) * 30 + k * 90; }
+  const px = A.x + A.size * 0.86, py = A.y + A.size * 0.97;           // pivot: chair wheels
+  ctx.translate(px + flinch, py + dy + (C.hitT > 0 ? -C.hitT * 10 : 0)); ctx.rotate(rot); ctx.translate(-px, -py);
+  ell(A.x + A.size * 0.55, A.y + A.size * 0.93, A.size * 0.42, 16); fs('rgba(0,0,0,0.35)');
+  if (artReady('mascot')) ctx.drawImage(ART.mascot, A.x, A.y, A.size, A.size);
+  // monitor screen overlay (on the image's monitor) for LOW CHILL / GG / hit flash
+  const red = G.deskFlash > 0 || def || (f <= 0.3 && Math.sin(t * 8) > 0);
+  if (red) { const [sx, sy, sw, sh] = A.screen; ctx.save(); ctx.globalAlpha = 0.72; rr(A.x + sx * A.size, A.y + sy * A.size, sw * A.size, sh * A.size, 4); fs('#6a1028'); ctx.globalAlpha = 1; T(def ? 'GG' : 'LOW CHILL', A.x + (sx + sw / 2) * A.size, A.y + (sy + sh / 2) * A.size, def ? 34 : 18, '#ffb0c0', 'center', { stroke: false, w: 900 }); ctx.restore(); }
+  if (def && dT > 1.0) for (let i = 0; i < 3; i++) { const a = t * 4 + i * 2.1; T('\u2605', fx + Math.cos(a) * 60, fy - 70 + Math.sin(a) * 16, 30, '#ffd23f', 'center', { sw: 5 }); }
   ctx.restore();
-  // monitor
-  ctx.save(); ctx.lineJoin = 'round';
-  rr(1602, 755, 70, 10, 4); fs('#1e1210', 4); rr(1628, 726, 18, 32, 3); fs('#1e1612', 4);
-  rr(1544, 612, 178, 124, 10); fs('#140e0c', 6);
-  const sx = 1554, sy = 622, sw = 158, sh = 104;
-  const red = G.deskFlash > 0 || (f <= 0.3 && Math.sin(t * 8) > 0);
-  const sg = ctx.createLinearGradient(0, sy, 0, sy + sh); sg.addColorStop(0, red ? '#6a1028' : '#1f3a22'); sg.addColorStop(1, red ? '#3a0816' : '#10200f'); ctx.fillStyle = sg; ctx.fillRect(sx, sy, sw, sh);
-  ctx.save(); ctx.beginPath(); ctx.rect(sx, sy, sw, sh); ctx.clip();
-  if (red) T(def ? 'GG' : 'LOW CHILL', sx + sw / 2, sy + sh / 2, 22, '#ffb0c0', 'center', { stroke: false, w: 900 });
-  else for (let i = 0; i < 8; i++) { const yy = sy + 4 + ((i * 14 - t * 20) % 112 + 112) % 112; ctx.fillStyle = `hsla(${(i * 67) % 360},80%,65%,0.9)`; ctx.fillRect(sx + 8, yy, 22, 6); ctx.fillStyle = 'rgba(220,255,250,0.55)'; ctx.fillRect(sx + 34, yy, 30 + ((i * 37) % 80), 6); }
-  ctx.restore(); ctx.fillStyle = 'rgba(255,255,255,0.08)'; ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(sx + 60, sy); ctx.lineTo(sx, sy + 60); ctx.fill();
-  ctx.restore();
-  // mic arm
-  ctx.save(); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-  const mx = 1662, my = 488 + Math.sin(t * 1.6) * 1.5;
-  ctx.strokeStyle = O; ctx.lineWidth = 13; ctx.beginPath(); ctx.moveTo(1530, 762); ctx.lineTo(1540, 560); ctx.lineTo(mx - 20, my + 8); ctx.stroke();
-  ctx.strokeStyle = '#3e3834'; ctx.lineWidth = 6; ctx.stroke();
-  circ(1540, 560, 8); fs('#262220', 4); rr(1518, 752, 26, 16, 3); fs('#262220', 4);
-  ctx.save(); ctx.translate(mx, my); ctx.rotate(-0.25); rr(-24, -13, 48, 26, 12); fs('#221e1c', 5); ctx.strokeStyle = '#7fb069'; ctx.lineWidth = 3; line(-6, -11, -6, 11); line(4, -11, 4, 11); ctx.restore();
-  ctx.restore();
-  if (!def) MASCOT.arm(hpose, t);
-  if (falling) {
-    const lin = clamp((dT - 0.3) / 0.9, 0, 1), k = ease(lin);
-    const px = lerp(1800, 1680, lin), py = lerp(640, 820, k) - Math.sin(lin * Math.PI) * 220;
-    ctx.save(); ctx.translate(px, py); ctx.rotate(lerp(0, Math.PI * 1.05, k)); ctx.scale(0.85, 0.85); ctx.translate(-1800, -640);
-    MASCOT.body(t, { eyes: lin > 0.7 ? 'x' : 'panic', beak: 0.8, legs: true, ruffle: true });
-    ctx.restore();
-    MASCOT.held({ hx: lerp(1742, 1600, lin), hy: lerp(700, 992, k) - Math.sin(lin * Math.PI) * 120, k: 0, ea: 0 }, t, lin >= 1);
-    if (lin >= 1) for (let i = 0; i < 3; i++) { const a = t * 4 + i * 2.1; T('\u2605', px + Math.cos(a) * 70, py + 120 + Math.sin(a) * 18, 30, '#ffd23f', 'center', { sw: 5 }); }
-  }
+  T("CROWW'S DESK", 1712, 1022, 20, 'rgba(255,255,255,0.18)', 'center', { stroke: false, w: 900 });
   for (const s of G.smoke) {
     const k = s.t / s.dur, r = lerp(s.r, s.gr, ease(k)), a = s.a * (1 - k) * (0.8 + (1 - f) * 0.6);
     MASCOT.smoke(s, r, a);
   }
-  if (C.ringT > 0) {
-    const k = 1 - C.ringT / 2.6, rx = 1675 - k * 170, ry = 525 - k * 190;
-    ctx.save(); ctx.globalAlpha = (1 - k) * 0.95; ctx.lineWidth = lerp(14, 5, k); ctx.strokeStyle = settings.clean ? '#f4fbff' : '#e0d8f4'; ctx.shadowBlur = 10; ctx.shadowColor = '#fff'; ell(rx, ry, lerp(12, 70, ease(k)), lerp(8, 42, ease(k)), -0.3); ctx.stroke(); ctx.restore();
-  }
-  if (C.coughT > 0.5) T(settings.clean ? '*sputter*' : '*cough*', 1640 - (1.2 - C.coughT) * 30, 430 - (1.2 - C.coughT) * 60, 30, '#fff', 'center', { sw: 6, w: 900 });
-  if (f <= 0.3 && !def) { const k = (t * 1.3) % 1; ctx.save(); ctx.globalAlpha = 1 - k; ctx.beginPath(); const dx = 1838, dy = 452 + k * 40; ctx.moveTo(dx, dy - 12); ctx.quadraticCurveTo(dx + 9, dy + 2, dx, dy + 6); ctx.quadraticCurveTo(dx - 9, dy + 2, dx, dy - 12); fs('#8fe8ff', 3); ctx.restore(); }
+  if (C.coughT > 0.5 && !def) T('*oof*', fx - 70 - (1.2 - C.coughT) * 30, fy - 110 - (1.2 - C.coughT) * 60, 30, '#fff', 'center', { sw: 6, w: 900 });
+  if (f <= 0.3 && !def) { const k = (t * 1.3) % 1; ctx.save(); ctx.globalAlpha = 1 - k; ctx.beginPath(); const dx = fx + 22, dy2 = fy - 40 + k * 40; ctx.moveTo(dx, dy2 - 12); ctx.quadraticCurveTo(dx + 9, dy2 + 2, dx, dy2 + 6); ctx.quadraticCurveTo(dx - 9, dy2 + 2, dx, dy2 - 12); fs('#8fe8ff', 3); ctx.restore(); }
 }

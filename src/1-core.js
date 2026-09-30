@@ -44,6 +44,10 @@ const DATA = {
     drain:    { name: 'GOLD DRAIN',   desc: 'Croww loses 3 gold / sec', perSec: 3,  color: '#ffd23f' }
   },
   test: { botRate: 24, botCount: 24 },
+  // desk mascot image (approved art) placement on the right panel
+  deskArt: { x: 1485, y: 596, size: 450, face: [0.64, 0.33], screen: [0.1, 0.3, 0.26, 0.23] },
+  // CROW BOSS: the old code-drawn smoking crow, an ally the streamer deploys (key B / the button under the chill meter)
+  crowBoss: { unlockWave: 5, cooldown: 90, duration: 12, puffEvery: 1.4, radius: 270, dmg: 45, dmgPerWave: 0.12, slow: 0.5, slowDur: 2.5, chillOnDeploy: 8, perch: [820, 560], scale: 0.62 },
   kick: { pusherKey: '32cbd69e4b950bf97679', cluster: 'us2', version: '8.4.0-rc2', knownRooms: { croww: '962037' }, pingEvery: 60 },
   fx: { shakePerDmg: 0.9, maxShake: 26 },
   ticker: 'HOW TO PLAY:  type  !bug  !troll  !lag  !spam  in chat to send attackers at Croww\'s desk   \u2022   fill the HYPE meter with chat to unlock  !boss   \u2022   every minute chat votes a hazard with  !1  !2  !3   \u2022   your name rides above your minion - hit the desk to top the TOP ATTACKERS board   \u2022   cooldown per chatter: {CD}s   \u2022   '
@@ -63,6 +67,9 @@ function hashStr(s) { let h = 2166136261; for (let i = 0; i < s.length; i++) { h
 function userColor(u, dark) { if (u === DATA.ai.name) return dark ? '#6e604a' : '#a89878'; const h = hashStr(u.toLowerCase()) % 360; return dark ? `hsl(${h},55%,32%)` : `hsl(${h},85%,72%)`; }
 /* Croww emotes (112px, base64-embedded by tools/build.js) */
 const EMOTES = {}; for (const k in (typeof EMOTE_SRC !== 'undefined' ? EMOTE_SRC : {})) { const im = new Image(); im.src = EMOTE_SRC[k]; EMOTES[k] = im; }
+const ART = {}; for (const k in (typeof ART_SRC !== 'undefined' ? ART_SRC : {})) { const im = new Image(); im.src = ART_SRC[k]; ART[k] = im; }
+function artReady(k) { const im = ART[k]; return !!(im && im.complete && im.naturalWidth); }
+function crowBossUnlocked() { try { return localStorage.getItem('chatclash.crowBoss') === '1'; } catch (e) { return false; } }
 function drawEmoteImg(name, x, y, size, rot, alpha) { const im = EMOTES[name]; if (!im || !im.complete || !im.naturalWidth) return; ctx.save(); if (alpha != null) ctx.globalAlpha *= alpha; ctx.translate(x + size / 2, y + size / 2); if (rot) ctx.rotate(rot); ctx.drawImage(im, -size / 2, -size / 2, size, size); ctx.restore(); }
 function T(s, x, y, size, col, align, opt) {
   opt = opt || {};
@@ -86,7 +93,7 @@ const SKEY = 'chatclash.settings.v1';
 const settings = Object.assign({
   channel: 'croww', rooms: Object.assign({}, DATA.kick.knownRooms), clean: false,
   userCooldown: DATA.chat.userCooldown, globalCap: DATA.chat.globalCap, difficulty: 'normal',
-  testMode: 'auto', botRate: DATA.test.botRate, volume: 60, muted: false, autoConnect: true
+  testMode: 'auto', botRate: DATA.test.botRate, npcWaves: true, volume: 60, muted: false, autoConnect: true
 }, (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })());
 settings.rooms = Object.assign({}, DATA.kick.knownRooms, settings.rooms || {});
 function saveSettings() { try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch (e) {} }
@@ -94,7 +101,23 @@ const qs = new URLSearchParams(location.search);
 if (qs.get('channel')) settings.channel = qs.get('channel').toLowerCase();
 if (qs.get('room')) settings.rooms[settings.channel] = qs.get('room');
 if (qs.get('clean') === '1') settings.clean = true;
-if (qs.get('test')) settings.testMode = qs.get('test');
+/* test mode is only ever 'auto' | 'on' | 'off'. Unknown/stale values (old saves, typos like ?test=true) are normalised here. */
+function normTestMode(v, fallback) {
+  v = String(v == null ? '' : v).trim().toLowerCase();
+  if (v === 'auto') return 'auto';
+  if (['on', 'always', 'always on', 'true', '1', 'yes'].includes(v)) return 'on';
+  if (['off', 'false', '0', 'no', 'none', 'disabled'].includes(v)) return 'off';
+  return fallback;
+}
+settings.testMode = normTestMode(settings.testMode, 'auto');
+settings.npcWaves = settings.npcWaves !== false;
+/* ?test= is a one-shot override for that page load. It is NOT allowed to beat a choice the streamer later makes
+   in Settings: changing Test mode in-game strips the param from the URL (see clearTestParam) so a reload keeps it. */
+if (qs.has('test')) settings.testMode = normTestMode(qs.get('test'), settings.testMode);
+if (qs.get('npc') === '0' || qs.get('npc') === 'off') settings.npcWaves = false;
+function clearTestParam() {
+  try { if (!qs.has('test')) return; qs.delete('test'); const s = qs.toString(); history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash); } catch (e) {}
+}
 if (qs.get('connect') === '0') settings.autoConnect = false;
 function bestScore() { try { return +(localStorage.getItem('chatclash.best') || 0); } catch (e) { return 0; } }
 function saveBest(v) { if (v > bestScore()) try { localStorage.setItem('chatclash.best', v); } catch (e) {} }

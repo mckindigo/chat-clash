@@ -33,8 +33,9 @@ html,body{margin:0;height:100%;background:#05030a;overflow:hidden}
  <div class="row" id="sStatus"></div>
  <div class="hint">If Look up is blocked (Cloudflare), open https://kick.com/api/v2/channels/&lt;channel&gt; in a normal browser tab and copy <b>chatroom &rarr; id</b> into the box. It is saved on this PC.</div>
  <h3>Test mode</h3>
- <div class="row"><label>Test mode</label><select id="sTest"><option value="auto">Auto (only when not connected)</option><option value="on">Always on</option><option value="off">Off</option></select></div>
+ <div class="row"><label>Test mode</label><select id="sTest"><option value="auto">Auto (only when not connected)</option><option value="on">Always on</option><option value="off">Off</option></select><span class="hint">Off = no bot chatters, ever (also clears their queued attacks)</span></div>
  <div class="row"><label>Bot chat rate</label><input type="range" id="sBotRate" min="0" max="120" step="1"><span id="vBotRate"></span></div>
+ <div class="row"><label>House NPC waves</label><input type="checkbox" id="sNpc"><span class="hint">grey "npc" enemies the game sends itself each wave (not chat bots)</span></div>
  <div class="row"><label>Fake chat message</label><input id="fUser" placeholder="username" size="12"><input id="fMsg" placeholder="!troll" size="14"><button id="bSend">Send</button></div>
  <h3>Game</h3>
  <div class="cols">
@@ -45,6 +46,8 @@ html,body{margin:0;height:100%;background:#05030a;overflow:hidden}
  </div>
  <h3>Audio</h3>
  <div class="row"><label>Volume</label><input type="range" id="sVol" min="0" max="100"><span id="vVol"></span><label style="min-width:0;margin-left:20px">Mute</label><input type="checkbox" id="sMute"></div>
+ <h3>Crow Boss</h3>
+ <div class="row"><button id="bCrow">Unlock Crow Boss now</button><span class="hint">Normally unlocks the first time you clear wave 5. Deploy with B or the button under the chill meter (90s cooldown).</span></div>
  <div class="row" style="margin-top:14px"><button id="bRestart">Restart session</button><button id="bClose">Close (S)</button></div>
 </div></div>
 <script>

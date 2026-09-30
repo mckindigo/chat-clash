@@ -1,7 +1,7 @@
 # CHAT CLASH v0.1
 
 A stream-interactive tower defense for **Croww** ([kick.com/croww](https://kick.com/croww)).
-Croww is the defender. His crow sits at the desk with a joint (or a coffee in Clean mode), and **chat spawns the enemies** that march at the desk.
+Croww is the defender at his gaming desk (with his crow on his shoulder), and **chat spawns the enemies** that march at the desk.
 
 **Play / capture:** https://mckindigo.github.io/chat-clash/
 
@@ -12,6 +12,7 @@ Croww is the defender. His crow sits at the desk with a joint (or a coffee in Cl
   - **Mod Hammer**: melee slam, splash. **Ban Laser**: single-target beam. **Slow Mode**: slows everything nearby. **Emote Cannon**: lobbed AoE.
 - **Rounds:** a short build phase, then a wave. **Space** starts the wave early. Gold comes from kills plus a steady trickle.
 - **You lose** when the **Chill Meter** hits 0. Score = waves survived. Waves are endless and escalate.
+- **Crow Boss (unlockable ally):** the first time you clear **wave 5** you get a *CROW BOSS UNLOCKED* banner (saved in this browser for good). Then press **B** or click the **CROW BOSS** button under the chill meter: the old smoking crow (coffee mug in Clean mode) flies onto the map for 12s, gives +8 chill, and every 1.4s blows a smoke ring that damages and slows (50%) every enemy within range. 90s cooldown. Settings also has an *Unlock Crow Boss now* button.
 - Keys: **S** settings (or the gear icon), **P / Esc** pause, **M** mute (or the speaker icon).
 - Settings (saved in this browser): channel, chatroom id, Clean mode, cooldown per chatter, max chat enemies, difficulty, test mode and bot rate, a fake-chat box, volume and mute.
 
@@ -33,8 +34,9 @@ The game reads chat the way Kick's web client does:
 2. It then opens `wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=8.4.0-rc2&flash=false`, subscribes to `chatrooms.<id>.v2`, and parses `App\Events\ChatMessageEvent` (`sender.username`, `content`).
 
 The status light in the top bar shows the connection: green = connected, yellow = connecting, red = error/retrying, grey = off.
-**Test mode** (Auto by default) runs bot chatters whenever live chat isn't connected. Set it to **Always on** to test while connected.
-URL params: `?channel=name`, `?room=id`, `?clean=1`, `?test=on|off|auto`, `?connect=0`.
+**Test mode** (Auto by default) runs bot chatters whenever live chat isn't connected. Set it to **Always on** to test while connected. **Off** means no bot chatters ever (it also cancels bot attacks already queued) and it is remembered across reloads.
+**House NPC waves** (Settings, on by default) are the grey "npc" enemies the game sends itself each wave; untick it to turn them off. They are not chat bots.
+URL params: `?channel=name`, `?room=id`, `?clean=1`, `?test=on|off|auto` (one-shot; changing Test mode in Settings removes it from the URL), `?npc=0`, `?connect=0`.
 
 ## OBS setup
 **Option A: Browser Source (recommended)**
@@ -53,7 +55,7 @@ Either way, keep the volume modest and remember **M** mutes instantly.
 ## Develop
 - `index.html` is **generated**: edit `src/` and run `node tools/build.js` (`npm run build`). All tunable numbers live in the `DATA` object at the top of `src/1-core.js`.
 - The mascot is drawn in layers (`MASCOT.body` / `.arm` / `.held` / `.smoke` in `src/3-draw.js`), so a layer can be swapped for a sprite later.
-- Tests: `npm i && node tools/browser-test.js` runs headless Chrome. It checks building, a survived wave, the vote, hazards, the boss, a defeat and results, Play Again, clean mode and fake chat, with no console errors, and writes `shots/`. `node tools/kick-live-test.js <chatroomId>` is a read-only socket check. `node tools/live-browser-test.js <channel>` is a read-only in-browser check.
+- Tests: `npm i && node tools/browser-test.js` runs headless Chrome. It checks building, a survived wave, the vote, hazards, the boss, a defeat and results, Play Again, clean mode and fake chat, with no console errors, and writes `shots/`. `node tools/verify-bots.js` checks in real time that Test mode Off stops all bots (30s+), survives reload, and that Kick/fake chat still work. `node tools/art-shots.js` writes 1920x1080 art/Crow Boss screenshots to `shots/verify/`. `node tools/kick-live-test.js <chatroomId>` is a read-only socket check. `node tools/live-browser-test.js <channel>` is a read-only in-browser check.
 
 ## Credits
-Oswald font (subset) by Vernon Adams et al., SIL Open Font License 1.1. Croww emotes and brand: (c) Croww, used with permission and not covered by any code license.
+Desk mascot and neon logo: approved Croww art from `brand/`, copied to `assets/` and embedded by the build. Oswald font (subset) by Vernon Adams et al., SIL Open Font License 1.1. Croww emotes and brand: (c) Croww, used with permission and not covered by any code license.
