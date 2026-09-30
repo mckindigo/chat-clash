@@ -27,20 +27,20 @@ const ok = (c, m) => { if (!c) { console.log('FAIL', m); process.exitCode = 1; }
     await page.evaluate(() => { CC.manual(true); CC.G.gold = 1000; });
     // build with real mouse clicks: pad 0 -> hammer button (first), pad 3 -> laser, etc
     const pads = await page.evaluate(() => CC.DATA.pads);
-    const R = 112, angs = [-150, -110, -70, -30];
     const plan = [[0, 0], [1, 1], [3, 3], [4, 2], [5, 1], [7, 0]];
     for (const [pi, ti] of plan) {
       const [px, py] = pads[pi];
       await page.mouse.click(px * sc, py * sc); await page.evaluate(() => CC.render());
-      const a = angs[ti] * Math.PI / 180;
-      await page.mouse.move((px + Math.cos(a) * R) * sc, (py + Math.sin(a) * R) * sc);
-      await page.mouse.click((px + Math.cos(a) * R) * sc, (py + Math.sin(a) * R) * sc);
+      // the ring is placed to stay on-screen (rotates near edges), so ask the game where option #ti is
+      const b = await page.evaluate(i => { const o = menuButtons()[i]; return { x: o.x, y: o.y }; }, ti);
+      await page.mouse.move(b.x * sc, b.y * sc);
+      await page.mouse.click(b.x * sc, b.y * sc);
     }
     const built = await page.evaluate(() => CC.G.towers.filter(Boolean).map(t => t.type));
     ok(built.length === plan.length, tag + ' built towers via mouse: ' + built.join(','));
     // upgrade tower on pad 3 via click + button
     await page.mouse.click(pads[3][0] * sc, pads[3][1] * sc);
-    const ua = -2.2; await page.mouse.click((pads[3][0] + Math.cos(ua) * R) * sc, (pads[3][1] + Math.sin(ua) * R) * sc);
+    const ub = await page.evaluate(() => menuButtons().find(o => o.kind === 'up')); await page.mouse.click(ub.x * sc, ub.y * sc);
     ok(await page.evaluate(() => CC.G.towers[3].level === 2), tag + ' upgrade via click');
     await page.mouse.click(10 * sc, 1000 * sc);
     await page.evaluate(() => { CC.G.gold = 240; CC.settings.botRate = 40; CC.startWave(); CC.onChat('CrowwFan99', '!troll'); CC.onChat('xX_Sniper_Xx', '!spam'); CC.onChat('LagLord', '!lag'); CC.step(9); });
@@ -51,7 +51,7 @@ const ok = (c, m) => { if (!c) { console.log('FAIL', m); process.exitCode = 1; }
     // hover a pad for the build menu shot (1080 only)
     if (W === 1920) {
       await page.evaluate(() => { CC.G.gold = 200; });
-      await page.mouse.click(pads[2][0], pads[2][1]); await page.mouse.move(pads[2][0] + Math.cos(-70 * Math.PI / 180) * R, pads[2][1] + Math.sin(-70 * Math.PI / 180) * R);
+      await page.mouse.click(pads[2][0], pads[2][1]); { const b2 = await page.evaluate(() => menuButtons()[2]); await page.mouse.move(b2.x, b2.y); }
       await page.evaluate(() => CC.render(12.5)); await page.screenshot({ path: path.join(shots, `build-menu-${tag}.png`) });
       await page.mouse.click(10, 1000);
     }

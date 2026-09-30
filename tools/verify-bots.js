@@ -30,7 +30,9 @@ const INSTR = () => {
   const on = await page.evaluate(() => ({ botChats: LOG.chats.filter(c => c.src === 'bot').length, botSpawns: LOG.spawns.filter(s => s.src === 'bot').length, npc: LOG.spawns.filter(s => s.src === 'npc').length, active: CC.testModeActive() }));
   ok(on.active && on.botChats > 10 && on.botSpawns > 0, 'test mode ON: bots chat + spawn ' + JSON.stringify(on) + ' (queued during build: ' + q.queuedBot + ')');
   // make sure there is queued bot work at the moment we switch Off (build phase of next wave)
-  await page.evaluate(() => { CC.G.phase = 'build'; CC.G.phaseT = 6; }); await sleep(2500);
+  // room for everyone (the chat-enemy cap would otherwise reject commands and make this test flaky)
+  await page.evaluate(() => { CC.settings.globalCap = 300; CC.G.phase = 'build'; CC.G.phaseT = 8; });
+  for (let i = 0; i < 40 && !(await page.evaluate(() => CC.G.chatQueue.some(x => x.src === 'bot'))); i++) await sleep(150);
   const before = await page.evaluate(() => ({ queuedBot: CC.G.chatQueue.filter(x => x.src === 'bot').length + CC.G.release.filter(x => x.src === 'bot').length }));
   // 2) Test mode OFF via the select
   await page.keyboard.press('s'); await sleep(150); await page.select('#sTest', 'off'); await page.evaluate(() => document.activeElement.blur()); await page.keyboard.press('s');

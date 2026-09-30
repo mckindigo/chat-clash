@@ -157,12 +157,41 @@ function drawCard() {
   } else { T('CHAT WAS QUIET...', cx, y + 110, 46, P.maroon, 'center', { w: 700, stroke: false }); T('type !bug to attack Croww next wave', cx, y + 166, 26, P.tan, 'center', { w: 500, stroke: false }); }
   ctx.restore();
 }
+/* Build / upgrade ring. Options fan out on an arc around the socket; the arc is rotated (and flipped below the
+   socket if needed) so every option stays fully inside the play area, and the tooltip is then placed where it
+   covers neither the options nor the socket. All in 1920x1080 game coords, so it is identical at any window size. */
+const MENU = { R: 112, r: 44, step: 40, tipW: 460, tipH: 94, play: { x0: 385, y0: 105, x1: 1495, y1: 1030 }, pad: 7 };
+function menuFits(b) { const P = MENU.play, R = b.r + 5 + MENU.pad; return b.x - R >= P.x0 && b.x + R <= P.x1 && b.y - R >= P.y0 && b.y + b.r + 12 + MENU.pad <= P.y1; }
+function menuArc(px, py, items) {
+  const n = items.length, span = (n - 1) * MENU.step, R = MENU.R;
+  const place = c => items.map((it, i) => { const a = (c - span / 2 + i * MENU.step) * Math.PI / 180; return Object.assign({ x: px + Math.cos(a) * R, y: py + Math.sin(a) * R, r: MENU.r }, it); });
+  // preferred: fanned upward (-90deg). Try the smallest rotation that fits, then the downward fan, then any angle.
+  const cands = [-90]; for (let d = 10; d <= 180; d += 10) cands.push(-90 + d, -90 - d);
+  for (const c of cands) { const b = place(c); if (b.every(menuFits)) return b; }
+  // last resort: clamp each option inside the play area (never happens with the current map, kept for safety)
+  const P = MENU.play, m = MENU.r + 5 + MENU.pad;
+  return place(-90).map(b => Object.assign(b, { x: clamp(b.x, P.x0 + m, P.x1 - m), y: clamp(b.y, P.y0 + m, P.y1 - m - 12) }));
+}
+let menuCache = null;
 function menuButtons() {
   if (view.sel < 0 || !G || G.phase === 'defeat' || G.phase === 'results') return [];
-  const [px, py] = DATA.pads[view.sel], tw = G.towers[view.sel], R = 112, out = [];
-  if (!tw) Object.keys(DATA.towers).forEach((k, i) => { const a = (-150 + i * 40) * Math.PI / 180; out.push({ kind: 'build', type: k, x: px + Math.cos(a) * R, y: py + Math.sin(a) * R, r: 44 }); });
-  else { out.push({ kind: 'up', x: px + Math.cos(-2.2) * R, y: py + Math.sin(-2.2) * R, r: 44 }); out.push({ kind: 'sell', x: px + Math.cos(-0.94) * R, y: py + Math.sin(-0.94) * R, r: 44 }); }
-  return out;
+  const [px, py] = DATA.pads[view.sel], tw = G.towers[view.sel];
+  const key = view.sel + ':' + (tw ? 'up' : 'build');
+  if (menuCache && menuCache.key === key) return menuCache.btns;
+  const items = tw ? [{ kind: 'up' }, { kind: 'sell' }] : Object.keys(DATA.towers).map(k => ({ kind: 'build', type: k }));
+  const btns = menuArc(px, py, items);
+  menuCache = { key, btns };
+  return btns;
+}
+function menuTooltipRect(btns) {
+  const [px, py] = DATA.pads[view.sel], P = MENU.play, w = MENU.tipW, h = MENU.tipH, g = 10;
+  let x0 = px - 50, y0 = py - 50, x1 = px + 50, y1 = py + 50;          // socket + all options bounding box
+  for (const b of btns) { x0 = Math.min(x0, b.x - b.r - 5); x1 = Math.max(x1, b.x + b.r + 5); y0 = Math.min(y0, b.y - b.r - 5); y1 = Math.max(y1, b.y + b.r + 14); }
+  const cx = clamp(px - w / 2, P.x0 + 6, P.x1 - 6 - w), cy = clamp(py - h / 2, P.y0 + 6, P.y1 - 6 - h);
+  const cands = [{ x: cx, y: y0 - g - h }, { x: cx, y: y1 + g }, { x: x1 + g, y: cy }, { x: x0 - g - w, y: cy }];
+  const inside = r => r.x >= P.x0 + 4 && r.x + r.w <= P.x1 - 4 && r.y >= P.y0 + 4 && r.y + r.h <= P.y1 - 4;
+  for (const c of cands) { const r = { x: c.x, y: c.y, w, h }; if (inside(r)) return r; }
+  return { x: cx, y: clamp(y0 - g - h, P.y0 + 4, P.y1 - 4 - h), w, h };
 }
 function statLine(type, lvl) {
   const S = tStats({ type, level: lvl });
@@ -205,8 +234,8 @@ function drawMenu(t) {
   if (tip && tip.kind === 'build') { const D = DATA.towers[tip.type]; title = D.name + '  -  ' + D.cost + 'g'; l1 = D.desc; l2 = statLine(tip.type, 1); }
   else if (tw) { const D = DATA.towers[tw.type]; title = D.name + '  LV ' + tw.level; l1 = statLine(tw.type, tw.level); l2 = tw.level < DATA.upgrade.maxLevel ? 'Upgrade (U) ' + upCost(tw) + 'g \u2192 ' + statLine(tw.type, tw.level + 1) : 'MAX LEVEL  \u2022  X to sell'; if (tip && tip.kind === 'sell') l2 = 'Sell (X) for ' + Math.round(tw.spent * DATA.economy.sellRefund) + 'g'; }
   else { title = 'BUILD A TOWER'; l1 = 'Hover for info  \u2022  keys 1-4 to build'; l2 = 'Gold: kills + a steady trickle'; }
-  const bw = 460, bx = clamp(px - bw / 2, 380, 1490 - bw), by = clamp(py - 268, 100, 1000);
-  panel(bx, by, bw, 94, '#7fb069', 0.95);
+  const TR = menuTooltipRect(btns), bw = TR.w, bx = TR.x, by = TR.y;
+  panel(bx, by, bw, TR.h, '#7fb069', 0.95);
   T(title, bx + 16, by + 22, 24, '#fff', 'left', { w: 900 });
   T(fit(l1, 18, bw - 30, 700), bx + 16, by + 51, 18, '#e9dfc4', 'left', { w: 700, stroke: false });
   T(fit(l2, 18, bw - 30, 700), bx + 16, by + 75, 18, '#8fca6a', 'left', { w: 700, stroke: false });
@@ -308,7 +337,6 @@ function render(t) {
   for (const p of G.pops) { const k = p.t / p.dur, s = k < 0.15 ? ease(k / 0.15) * 1.2 : 1.2 - (k - 0.15) * 0.3; drawEmoteImg(p.name, p.x - 60 * s, p.y - 60 * s - k * 90, 120 * s, p.rot + Math.sin(p.t * 12) * 0.1, k > 0.7 ? (1 - k) / 0.3 : 1); }
   ctx.restore();
   if (G.redFlash > 0) { const g = ctx.createRadialGradient(960, 540, 400, 960, 540, 1100); g.addColorStop(0, 'rgba(255,40,70,0)'); g.addColorStop(1, `rgba(255,40,70,${G.redFlash * 0.45})`); ctx.fillStyle = g; ctx.fillRect(0, 0, 1920, 1080); }
-  drawMenu(t);
   drawVote(t);
   drawBanners();
   drawCard();
@@ -316,6 +344,7 @@ function render(t) {
   drawTopBar(t);
   drawDrain(t);
   drawTicker(t);
+  drawMenu(t);   // last of the in-game layers: the build ring is never hidden under side panels / banners
   if (G.phase === 'results') drawResults();
   drawTitle(t);
   if (G.paused) { ctx.fillStyle = 'rgba(12,6,5,0.6)'; ctx.fillRect(0, 90, 1920, 950); T('PAUSED', 960, 500, 110, '#fff', 'center', { w: 900, sw: 14 }); T('press P or Esc to resume', 960, 580, 32, '#e9dfc4', 'center'); }
