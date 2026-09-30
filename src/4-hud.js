@@ -63,11 +63,16 @@ function drawSidebar(t) {
     const y = 180 + i * 58, D = DATA.enemies[ty], lock = ty === 'boss' && !G.bossReady;
     ctx.save(); if (lock) ctx.globalAlpha = 0.5; drawEnemyShape(ty, 48, y + 2, ty === 'boss' ? 17 : ty === 'troll' ? 16 : ty === 'spam' ? 11 : 14, t, 0, 0, false); ctx.restore();
     T('!' + ty, 84, y - 7, 32, lock ? '#9c8a68' : ty === 'boss' ? '#ff5070' : '#fff', 'left', { w: 900, sw: 6 });
-    T(ty === 'boss' ? (G.bossReady ? 'UNLOCKED! first one wins' : 'locked \u2022 fill the HYPE bar') : D.desc, 84, y + 19, 17, ty === 'boss' && G.bossReady ? '#ffd23f' : '#d4c49c', 'left', { w: 700, stroke: false });
-    const tag = { spam: ['x5', '#ff7ac8'], troll: ['TANK', '#9ad07e'], bug: ['FAST', '#9be34a'], lag: ['AURA', '#3fc8ff'], boss: [G.bossReady ? 'READY' : 'LOCK', G.bossReady ? '#ffd23f' : '#6e604a'] }[ty];
+    T(ty === 'boss' ? (G.bossReady ? 'UNLOCKED! first one wins' : 'locked \u2022 fill the HYPE bar') : ty === 'spam' ? 'swarm of ' + spamCount(smallChatK()) + ' tiny' : D.desc, 84, y + 19, 17, ty === 'boss' && G.bossReady ? '#ffd23f' : '#d4c49c', 'left', { w: 700, stroke: false });
+    const tag = { spam: ['x' + spamCount(smallChatK()), '#ff7ac8'], troll: ['TANK', '#9ad07e'], bug: ['FAST', '#9be34a'], lag: ['AURA', '#3fc8ff'], boss: [G.bossReady ? 'READY' : 'LOCK', G.bossReady ? '#ffd23f' : '#6e604a'] }[ty];
     T(tag[0], 340, y - 7, 18, tag[1], 'right', { w: 900 });
   });
-  T('Cooldown: ' + settings.userCooldown + 's per chatter', 185, 468, 20, '#fef9e5', 'center', { w: 800, stroke: false });
+  const sk = smallChatK();
+  if (sk > 0.05) {
+    T('Cooldown: ' + effCooldown(sk) + 's', 24, 468, 20, '#fef9e5', 'left', { w: 800, stroke: false });
+    ctx.save(); ctx.shadowBlur = 10 + Math.sin(t * 3) * 4; ctx.shadowColor = '#e0b45c'; rr(166, 455, 180, 26, 13); fs('#4a2f12', 2, '#e0b45c'); ctx.restore();
+    T('SMALL CHAT BOOST ' + Math.round(sk * 100) + '%', 256, 468, 15, '#ffd23f', 'center', { w: 900, stroke: false });
+  } else T('Cooldown: ' + settings.userCooldown + 's per chatter', 185, 468, 20, '#fef9e5', 'center', { w: 800, stroke: false });
   const nAct = activeChatters(), gps = goldPerSec(nAct);
   T(fit('Minions ' + chatLoad() + '/' + settings.globalCap + (G.chatQueue.length ? ' (' + G.chatQueue.length + ' queued)' : '') + '  \u2022  ' + nAct + ' chatting  \u2022  +' + gps.toFixed(1) + 'g/s', 17, 336, 700), 185, 493, 17, gps > DATA.economy.trickle + 0.05 ? '#e0c878' : '#bfae86', 'center', { w: 700, stroke: false });
   panel(12, 520, 346, 86, G.bossReady ? '#ff4060' : '#6b4a32');
@@ -106,7 +111,7 @@ function drawSidebar(t) {
 function drawTicker(t) {
   ctx.fillStyle = '#4a1a1a'; ctx.fillRect(0, 1040, 1920, 40);
   ctx.save(); ctx.shadowBlur = 10; ctx.shadowColor = '#7fb069'; ctx.fillStyle = '#7fb069'; ctx.fillRect(0, 1040, 1920, 2); ctx.restore();
-  const s = DATA.ticker.replace('{CD}', settings.userCooldown);
+  const s = DATA.ticker.replace('{CD}', effCooldown());
   ctx.font = `900 25px ${F}`; const w = ctx.measureText(s).width;
   const off = -((t * 110) % w), parts = s.split(/(![a-z0-9]+)/);
   ctx.save(); ctx.beginPath(); ctx.rect(0, 1042, 1920, 38); ctx.clip();
@@ -494,5 +499,5 @@ window.CC = {
   get G() { return G; }, DATA, settings, Kick, feed, onChat, testModeActive, stopBots, build, upgrade, startWave, newGame, toggleSettings,
   spawn(t, u) { spawnEnemy(t, u || 'tester', false); },
   step(sec, dt) { dt = dt || 1 / 30; const n = Math.round(sec / dt); for (let i = 0; i < n; i++) update(dt); },
-  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : animT); }, setPaused, heldChat, activeChatters, goldPerSec, smallChatK, forceVote() { G.voteClock = 0; }
+  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : animT); }, setPaused, heldChat, activeChatters, goldPerSec, smallChatK, effCooldown, hypeGainMult, spamCount, forceVote() { G.voteClock = 0; }
 };

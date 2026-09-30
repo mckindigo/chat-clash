@@ -56,11 +56,12 @@ function defeat() {
 }
 
 /* ===================================================================== enemies */
-function spawnEnemy(type, user, isBot, src) {
-  const D = DATA.enemies[type], n = D.count || 1;
-  const hpM = (1 + DATA.wave.hpScale * (G.wave - 1)) * diff().hp, spM = 1 + DATA.wave.speedScale * (G.wave - 1);
+function spawnEnemy(type, user, isBot, src, boost) {
+  boost = boost || 0;   // small-chat boost for chat commands: tougher enemies, more !spam minions
+  const D = DATA.enemies[type], n = type === 'spam' ? spamCount(boost) : (D.count || 1);
+  const hpM = (1 + DATA.wave.hpScale * (G.wave - 1)) * diff().hp * (1 + (DATA.smallChat.hpBoost[type] || 0) * boost), spM = 1 + DATA.wave.speedScale * (G.wave - 1);
   for (let i = 0; i < n; i++) {
-    G.enemies.push({ id: ++G.eid, type, user, isBot, src: src || (isBot ? 'npc' : 'chat'), lead: i === 0, n, hp: D.hp * hpM, maxHp: D.hp * hpM, speed: D.speed * spM * rand(0.95, 1.05), d: -i * 26 - 10, x: -99, y: -99, ang: 0, r: D.r,
+    G.enemies.push({ id: ++G.eid, type, user, isBot, boosted: boost > 0.05, src: src || (isBot ? 'npc' : 'chat'), lead: i === 0, n, hp: D.hp * hpM, maxHp: D.hp * hpM, speed: D.speed * spM * rand(0.95, 1.05), d: -i * 26 - 10, x: -99, y: -99, ang: 0, r: D.r,
       slowT: 0, slowAmt: 0, flash: 0, dead: false, cur: D.speed, wob: Math.random() * 10, dmgAcc: 0 });
   }
   if (!isBot) { stat(G.waveStats, user).spawns++; stat(G.session, user).spawns++; }
@@ -108,18 +109,19 @@ function tryCommand(user, type, src) {
   if (type === 'boss' && !G.bossReady) { addFeed(user, '!boss  (locked - hype ' + Math.floor(G.hype) + '%)', 'lock'); return; }
   const n = DATA.enemies[type].count || 1;
   if (chatLoad() + n > settings.globalCap && type !== 'boss') { addFeed(user, '!' + type + '  (room is full!)', 'cap'); return; }
-  cooldowns[key] = now + settings.userCooldown;
+  cooldowns[key] = now + effCooldown();
   if (type === 'boss') { G.bossReady = false; G.hype = 0; }
   else addHype(DATA.chat.hypePerCmd);
   const live = G.phase === 'wave' && G.waveT < G.waveDur;
-  if (live) { spawnEnemy(type, user, false, src); G.aiBudget = Math.max(0, G.aiBudget - DATA.enemies[type].cost * DATA.ai.chatDiscount); }
-  else G.chatQueue.push({ type, user, src });
+  const boost = type === 'boss' ? 0 : smallChatK();
+  if (live) { spawnEnemy(type, user, false, src, boost); G.aiBudget = Math.max(0, G.aiBudget - DATA.enemies[type].cost * DATA.ai.chatDiscount); }
+  else G.chatQueue.push({ type, user, src, boost });
   addFeed(user, '!' + type + (live ? '  \u2714 sent' : '  \u2714 queued'), 'ok');
   SFX.play('chat');
 }
 function addHype(v) {
   if (!G || G.bossReady || G.phase === 'results' || G.phase === 'defeat') return;
-  G.hype = Math.min(DATA.chat.hypeMax, G.hype + v);
+  G.hype = Math.min(DATA.chat.hypeMax, G.hype + v * hypeGainMult());
   if (G.hype >= DATA.chat.hypeMax) { G.bossReady = true; banner('BOSS UNLOCKED', 'first chatter to type !boss summons it', '#ff4060', 3, 'crowwHype'); SFX.play('unlock'); }
 }
 
@@ -148,6 +150,9 @@ function smallChatK(n) {
   if (settings.smallChat === 'on') return 1;
   return clamp(1 - (n == null ? activeChatters() : n) / DATA.economy.smallChatFull, 0, 1);
 }
+function effCooldown(k) { k = k == null ? smallChatK() : k; const base = settings.userCooldown; return Math.round(Math.min(base, lerp(base, DATA.smallChat.cooldown, clamp(k * DATA.smallChat.cooldownCurve, 0, 1)))); }  // 7s at 0-3 chatters, back to the setting by 8
+function hypeGainMult(k) { return 1 + DATA.smallChat.hypeGain * (k == null ? smallChatK() : k); }
+function spamCount(k) { return DATA.enemies.spam.count + Math.round(DATA.smallChat.spamExtra * k); }
 function goldPerSec(n) { return DATA.economy.trickle + DATA.economy.smallTrickleBonus * smallChatK(n); }
 function killGoldMult(n) { return 1 + DATA.economy.smallKillBonus * smallChatK(n); }
 function onChat(user, text, src) {
@@ -181,7 +186,7 @@ function endVote() {
   const v = G.vote, mx = Math.max(...v.counts), best = [0, 1, 2].filter(i => v.counts[i] === mx), w = pick(best);
   const id = v.opts[w]; G.hazard = { id, t: DATA.vote.hazardDuration };
   const H = DATA.hazards[id];
-  banner(H.name + '!', (mx === 0 ? 'no votes - random pick: ' : 'chat voted: ') + H.desc, H.color, 3);
+  banner(H.name + '!', (mx === 0 ? 'no votes - random pick: ' : 'chat voted (' + v.counts.reduce((a, b) => a + b, 0) + ' vote' + (v.counts.reduce((a, b) => a + b, 0) === 1 ? '' : 's') + '): ') + H.desc, H.color, 3);
   SFX.play('vote'); G.vote = null;
 }
 
@@ -446,7 +451,7 @@ function update(dt) {
         spawnEnemy(ty, DATA.ai.name, true, 'npc'); G.aiBudget -= DATA.enemies[ty].cost; G.aiTimer = G.aiGap * rand(0.7, 1.3);
       }
     }
-    if (G.release.length) { G.releaseT -= dt; if (G.releaseT <= 0) { const q = G.release.shift(); if (q.src === 'bot' && !testModeActive()) { G.releaseT = 0; } else { spawnEnemy(q.type, q.user, false, q.src); G.releaseT = DATA.chat.queueStagger; } } }
+    if (G.release.length) { G.releaseT -= dt; if (G.releaseT <= 0) { const q = G.release.shift(); if (q.src === 'bot' && !testModeActive()) { G.releaseT = 0; } else { spawnEnemy(q.type, q.user, false, q.src, q.boost || 0); G.releaseT = DATA.chat.queueStagger; } } }
     if (G.waveT >= G.waveDur && !G.release.length && !G.enemies.length) waveCleared();
   } else if (G.phase === 'defeat') {
     G.defeatT += dt;
@@ -455,7 +460,7 @@ function update(dt) {
   const playing = G.phase === 'build' || G.phase === 'wave';
   if (playing) {
     G.gold += goldPerSec() * dt;
-    if (!G.bossReady) G.hype = Math.max(0, G.hype - DATA.chat.hypeDecay * dt);
+    if (!G.bossReady) G.hype = Math.max(0, G.hype - DATA.chat.hypeDecay * (1 - DATA.smallChat.hypeDecayCut * smallChatK()) * dt);
     G.voteClock -= dt;
     if (G.voteClock <= 0 && !G.vote) { startVote(); G.voteClock = DATA.vote.interval; }
     if (G.vote) { G.vote.t += dt; if (G.vote.t >= DATA.vote.duration) endVote(); }

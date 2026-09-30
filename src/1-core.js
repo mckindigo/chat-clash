@@ -16,6 +16,8 @@ const DATA = {
     // small-chat boost: fewer chatters = fewer chat enemies to farm, so the trickle (and a little kill gold) scales up.
     // boost k = 1 at 0 active chatters, fading linearly to 0 at smallChatFull chatters.
     smallChatFull: 8, smallTrickleBonus: 1.5, smallKillBonus: 0.1, activeWindow: 120 },
+  // small-chat scaling of chat power (k = small-chat boost 0..1, same k as the gold boost)
+  smallChat: { cooldown: 7, cooldownCurve: 1.6, hpBoost: { bug: 0.4, troll: 0.6, lag: 0.4, spam: 0.3 }, spamExtra: 3, hypeGain: 4, hypeDecayCut: 0.7 },
   chill: { max: 100, regenOnClear: 6 },
   wave: { firstBuild: 15, build: 12, baseDuration: 20, perWave: 2, maxDuration: 45, hpScale: 0.13, speedScale: 0.012 },
   difficulty: {
