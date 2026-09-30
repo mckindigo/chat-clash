@@ -111,15 +111,15 @@ function drawSidebar(t) {
   if (hf > 0.01) { ctx.save(); rr(88, 568, Math.max(20, 256 * hf), 24, 10); const hg = ctx.createLinearGradient(88, 0, 344, 0); hg.addColorStop(0, '#e0b45c'); hg.addColorStop(1, '#ffd23f'); ctx.shadowBlur = G.bossReady ? 20 + Math.sin(t * 8) * 10 : 8; ctx.shadowColor = '#e0b45c'; fs(hg); ctx.restore(); }
   panel(12, 616, 346, 226, '#ffd23f');
   T('TOP ATTACKERS', 185, 644, 28, '#ffd23f', 'center', { w: 900 });
-  const top = Object.entries(G.session).sort((a, b) => b[1].dmg - a[1].dmg || b[1].spawns - a[1].spawns).slice(0, 5);
+  const top = Object.entries(G.session).sort(byPts).slice(0, 5);
   if (!top.length) T('nobody yet - type !bug', 185, 740, 20, '#9c8a68', 'center', { w: 700, stroke: false });
   top.forEach(([u, s], i) => {
     const y = 682 + i * 31;
     T((i + 1) + '.', 28, y, 22, i === 0 ? '#ffd23f' : '#e9dfc4', 'left', { w: 900 });
     T(fit(u, 22, 210), 60, y, 22, userColor(u), 'left', { w: 900, sw: 5 });
-    T(s.dmg + '', 342, y, 22, '#ff8a9a', 'right', { w: 900 });
+    T(Math.floor(pts(s)) + '', 342, y, 22, '#ff8a9a', 'right', { w: 900 });
   });
-  T('chill damage dealt', 342, 828, 14, '#9c8a68', 'right', { stroke: false, w: 600 });
+  T('attack points', 342, 828, 14, '#9c8a68', 'right', { stroke: false, w: 600 });
   panel(12, 852, 346, 178, '#6b4a32');
   const lines = feed.slice(-DATA.chat.feedLines);
   if (!lines.length) T('chat feed', 185, 940, 18, '#6e604a', 'center', { stroke: false });
@@ -205,7 +205,7 @@ function drawCard() {
   if (c.top) {
     const u = c.top.u, s = c.top.s;
     T(fit(u, 58, w - 230, 700), cx, y + 112, 58, P.maroon, 'center', { w: 700, stroke: false });
-    T(s.dmg + ' CHILL DAMAGE  \u2022  ' + s.spawns + ' SPAWN' + (s.spawns === 1 ? '' : 'S') + '  \u2022  GG, RESPECT', cx, y + 170, 24, P.tan, 'center', { w: 600, stroke: false });
+    T(Math.floor(pts(s)) + ' ATTACK PTS  \u2022  ' + s.dmg + ' CHILL  \u2022  ' + s.spawns + ' SPAWN' + (s.spawns === 1 ? '' : 'S') + '  \u2022  GG, RESPECT', cx, y + 170, 24, P.tan, 'center', { w: 600, stroke: false });
   } else { T('CHAT WAS QUIET...', cx, y + 110, 46, P.maroon, 'center', { w: 700, stroke: false }); T('type !bug to attack Croww next wave', cx, y + 166, 26, P.tan, 'center', { w: 500, stroke: false }); }
   ctx.restore();
 }
@@ -268,23 +268,23 @@ function drawMenu(t) {
     let label = '', can = true, col = '#7fb069';
     if (b.kind === 'build') { const D = DATA.towers[b.type], c = towerCost(b.type); can = G.gold >= c; col = D.color; label = c + 'g'; }
     else if (b.kind === 'up') { const c = upCost(tw); can = c > 0 && G.gold >= c; label = c ? c + 'g' : 'MAX'; col = '#8fca6a'; }
-    else { label = '+' + Math.round(tw.spent * DATA.economy.sellRefund); col = '#ffd23f'; }
+    else { label = ''; col = '#fff'; }
     ctx.save();
     const R = b.r + (hov ? 5 : 0);
-    circ(b.x, b.y, R); fs(can ? '#3a1a17' : '#1e1210', 5); ctx.lineWidth = 4; ctx.strokeStyle = can ? col : '#5a4a3a'; circ(b.x, b.y, R - 5); ctx.stroke();
+    circ(b.x, b.y, R); fs(b.kind === 'sell' ? (hov ? '#ff3b4f' : '#d0203a') : can ? '#3a1a17' : '#1e1210', 5); ctx.lineWidth = 4; ctx.strokeStyle = can ? col : '#5a4a3a'; circ(b.x, b.y, R - 5); ctx.stroke();
     if (!can) ctx.globalAlpha = 0.45;
     if (b.kind === 'build') drawTowerIcon(b.type, b.x, b.y - 4, 0.72, t, -Math.PI / 4, 0, 0, 0);
     else if (b.kind === 'up') { ctx.beginPath(); ctx.moveTo(b.x, b.y - 26); ctx.lineTo(b.x + 20, b.y - 2); ctx.lineTo(b.x + 8, b.y - 2); ctx.lineTo(b.x + 8, b.y + 14); ctx.lineTo(b.x - 8, b.y + 14); ctx.lineTo(b.x - 8, b.y - 2); ctx.lineTo(b.x - 20, b.y - 2); ctx.closePath(); fs('#8fca6a', 4); }
-    else drawCoin(b.x, b.y - 6, 18);
+    else { T('SELL', b.x, b.y - 9, 24, '#fff', 'center', { w: 900, sw: 4 }); T('+' + sellValue(tw) + 'g', b.x, b.y + 16, 20, '#ffd23f', 'center', { w: 900, sw: 4 }); }
     ctx.globalAlpha = 1;
-    T(label, b.x, b.y + b.r - 2, 22, can ? '#ffd23f' : '#a08080', 'center', { w: 900, sw: 5 });
+    if (label) T(label, b.x, b.y + b.r - 2, 22, can ? '#ffd23f' : '#a08080', 'center', { w: 900, sw: 5 });
     if (b.kind === 'build') { circ(b.x - b.r + 8, b.y - b.r + 8, 13); fs('#7fb069', 3); T(DATA.towers[b.type].key, b.x - b.r + 8, b.y - b.r + 9, 17, O, 'center', { w: 900, stroke: false }); }
     ctx.restore();
     if (hov) tip = b;
   }
   let title = '', l1 = '', l2 = '';
   if (tip && tip.kind === 'build') { const D = DATA.towers[tip.type], c = towerCost(tip.type), own = G.towers.filter(x => x && x.type === tip.type).length; title = D.name + '  -  ' + c + 'g' + (own ? '  (' + own + ' owned, +' + Math.round(DATA.economy.copyStep * 100) + '% each)' : ''); l1 = D.desc; l2 = statLine(tip.type, 1); }
-  else if (tw) { const D = DATA.towers[tw.type]; title = D.name + '  LV ' + tw.level; l1 = statLine(tw.type, tw.level); l2 = tw.level < DATA.upgrade.maxLevel ? 'Upgrade (U) ' + upCost(tw) + 'g \u2192 ' + statLine(tw.type, tw.level + 1) : 'MAX LEVEL  \u2022  X to sell'; if (tip && tip.kind === 'sell') l2 = 'Sell (X) for ' + Math.round(tw.spent * DATA.economy.sellRefund) + 'g'; }
+  else if (tw) { const D = DATA.towers[tw.type]; title = D.name + '  LV ' + tw.level; l1 = statLine(tw.type, tw.level); l2 = tw.level < DATA.upgrade.maxLevel ? 'Upgrade (U) ' + upCost(tw) + 'g \u2192 ' + statLine(tw.type, tw.level + 1) : 'MAX LEVEL  \u2022  SELL (X / right-click) +' + sellValue(tw) + 'g'; if (tip && tip.kind === 'sell') l2 = 'SELL (X or right-click the tower) for +' + sellValue(tw) + 'g'; }
   else { title = 'BUILD A TOWER'; l1 = 'Hover for info  \u2022  keys 1-4 to build'; l2 = 'Gold: kills + wave-clear bonus (small trickle)'; }
   const TR = menuTooltipRect(btns), bw = TR.w, bx = TR.x, by = TR.y;
   panel(bx, by, bw, TR.h, '#7fb069', 0.95);
@@ -307,14 +307,14 @@ function drawResults() {
   const bestN = Math.max(bestScore(), G.score);
   T(bestN > 0 ? (nb ? 'NEW BEST!  ' : 'BEST: ') + bestN + ' WAVE' + (bestN === 1 ? '' : 'S') + ' CLEARED' : 'BEST: no waves cleared yet', 960, y + 288, 24, nb ? P.forest : P.olive, 'center', { w: 600, stroke: false });
   T('TOP ATTACKERS', 960, y + 344, 36, P.maroon, 'center', { w: 700, stroke: false });
-  const top = Object.entries(G.session).sort((a, b) => b[1].dmg - a[1].dmg || b[1].spawns - a[1].spawns).slice(0, 5);
+  const top = Object.entries(G.session).sort(byPts).slice(0, 5);
   if (!top.length) T('no chatters this session', 960, y + 420, 26, P.olive, 'center', { stroke: false });
   top.forEach(([u, s], i) => {
     const yy = y + 396 + i * 48;
     if (i === 0) { ctx.save(); ctx.translate(x + 150, yy); ctx.beginPath(); ctx.moveTo(-18, 10); ctx.lineTo(-20, -12); ctx.lineTo(-8, -2); ctx.lineTo(0, -16); ctx.lineTo(8, -2); ctx.lineTo(20, -12); ctx.lineTo(18, 10); ctx.closePath(); fs('#d9a441', 3, P.maroon); ctx.restore(); }
     T((i + 1) + '.', x + 190, yy, 32, P.olive, 'left', { w: 700, stroke: false });
     T(fit(u, 32, 380, 700), x + 240, yy, 32, userColor(u, true), 'left', { w: 700, stroke: false });
-    T(s.dmg + ' DMG  \u2022  ' + s.spawns + ' SPAWN' + (s.spawns === 1 ? '' : 'S'), x + w - 60, yy, 24, P.tan, 'right', { w: 600, stroke: false });
+    T(Math.floor(pts(s)) + ' PTS  \u2022  ' + s.spawns + ' SPAWN' + (s.spawns === 1 ? '' : 'S'), x + w - 60, yy, 24, P.tan, 'right', { w: 600, stroke: false });
   });
   const bw = 380, bh = 78, bx = 960 - bw / 2, by = y + h - 118, hov = view.mx > bx && view.mx < bx + bw && view.my > by && view.my < by + bh;
   G.resultsBtn = { x: bx, y: by, w: bw, h: bh };
@@ -435,7 +435,11 @@ cv.addEventListener('mousedown', e => {
   if (G.phase === 'results') { if (inRect(p, G.resultsBtn)) { newGame(); SFX.play('click'); } return; }
   if (G.phase === 'defeat' || G.paused) return;
   if (inRect(p, G.crowBossBtn)) { deployCrowBoss(); return; }
-  if (e.button === 2) { view.sel = -1; return; }
+  if (e.button === 2) {   // right-click a tower = sell it (refund pops up over the pad); anywhere else just closes the menu
+    const pi = DATA.pads.findIndex(([px, py]) => dist(p.x, p.y, px, py) < 50);
+    if (pi >= 0 && G.towers[pi]) sell(pi); else view.sel = -1;
+    return;
+  }
   const h = hitTest(p.x, p.y);
   if (h.btn) {
     const b = h.btn;

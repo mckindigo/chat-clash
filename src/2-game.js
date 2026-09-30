@@ -23,7 +23,17 @@ function newGame(keepSession) {
 function diff() { return DATA.difficulty[settings.difficulty] || DATA.difficulty.normal; }
 function banner(title, sub, color, dur, emote) { G.banners.push({ title, sub, color: color || '#fff', t: 0, dur: dur || 2.4, emote }); if (G.banners.length > 2) G.banners.shift(); }
 function addFeed(user, text, kind) { feed.push({ user, text, kind: kind || 'msg', t: performance.now() }); if (feed.length > 40) feed.shift(); }
-function stat(tab, u) { return tab[u] || (tab[u] = { dmg: 0, spawns: 0 }); }
+/* per-chatter stats. Keyed by the name the chatter first used; a later message in different case ("Moonpie" vs "moonpie")
+   finds the same entry, like cooldowns do. pts = TOP ATTACKERS attack points, dmg = chill taken off the desk. */
+function statKey(tab, u) { if (tab[u]) return u; const l = String(u).toLowerCase(); for (const k in tab) if (k.toLowerCase() === l) return k; return null; }
+function stat(tab, u) {
+  const k = statKey(tab, u); if (k != null) return tab[k];
+  const name = (tab !== G.session && statKey(G.session, u)) || u;   // a new wave entry uses the board's spelling of the name
+  return (tab[name] = { pts: 0, dmg: 0, spawns: 0 });
+}
+function pts(s) { return (s && s.pts) || 0; }
+function byPts(a, b) { return pts(b[1]) - pts(a[1]) || b[1].dmg - a[1].dmg || b[1].spawns - a[1].spawns; }
+function credit(e, p) { if (e.isBot || !(p > 0)) return; const w = stat(G.waveStats, e.user), s = stat(G.session, e.user); w.pts = pts(w) + p; s.pts = pts(s) + p; }
 function unitCount(type, boost) { return type === 'spam' ? spamCount(boost || 0) : (DATA.enemies[type].count || 1); }   // the REAL number of minions a command spawns
 function chatLoad() { return G.enemies.filter(e => !e.isBot && !e.dead).length + [...G.release, ...G.chatQueue].reduce((a, q) => a + unitCount(q.type, q.boost), 0); }
 
@@ -48,7 +58,7 @@ function waveCleared() {
   G.texts.push({ x: 1200, y: 60, s: '+' + bonus + 'g WAVE BONUS', c: '#ffd23f', t: 0, dur: 1.8, size: 30, vy: -10, pop: true });
   G.chill = Math.min(DATA.chill.max, G.chill + DATA.chill.regenOnClear);
   let top = null;
-  for (const u in G.waveStats) { const s = G.waveStats[u]; if (!top || s.dmg > top.s.dmg || (s.dmg === top.s.dmg && s.spawns > top.s.spawns)) top = { u, s }; }
+  for (const u in G.waveStats) { const s = G.waveStats[u]; if (!top || byPts([u, s], [top.u, top.s]) < 0) top = { u, s }; }
   G.card = { t: 0, dur: 5, wave: G.wave, top };
   G.crow.ringT = 2.6;
   banner('WAVE ' + G.wave + ' CLEARED', '+' + bonus + ' gold  \u2022  +' + DATA.chill.regenOnClear + ' chill  \u2022  Croww stays cozy', '#8fca6a', 2.6, 'crowwW');
@@ -80,6 +90,7 @@ function spawnEnemy(type, user, isBot, src, boost) {
 }
 function dmgEnemy(e, amt, src) {
   if (e.dead) return;
+  credit(e, Math.min(amt, Math.max(0, e.hp)) * DATA.score.perHp);   // tower damage this chat minion soaked
   e.hp -= amt; e.flash = 0.12; e.dmgAcc += amt;
   if (e.dmgAcc >= 8 || src !== 'laser') { if (e.dmgAcc >= 1) G.texts.push({ x: e.x + rand(-10, 10), y: e.y - e.r - 6, s: Math.round(e.dmgAcc) + '', c: '#fff6c8', t: 0, dur: 0.6, size: 22, vy: -70, dmg: true }); e.dmgAcc = 0; }
   if (src !== 'laser') SFX.play('hit');
@@ -102,7 +113,7 @@ function deskHit(e) {
   if (G.phase !== 'wave' && G.phase !== 'build') return;
   const D = DATA.enemies[e.type];
   G.chill -= D.dmg;
-  if (!e.isBot) { stat(G.waveStats, e.user).dmg += D.dmg; stat(G.session, e.user).dmg += D.dmg; G.dmgChat += D.dmg; } else G.dmgNpc += D.dmg;
+  if (!e.isBot) { stat(G.waveStats, e.user).dmg += D.dmg; stat(G.session, e.user).dmg += D.dmg; credit(e, DATA.score.desk + DATA.score.deskPerChill * D.dmg); G.dmgChat += D.dmg; } else G.dmgNpc += D.dmg;
   G.crow.hitT = 0.6; G.crow.coughT = 1.2; G.deskFlash = 0.3; G.redFlash = Math.min(1, 0.25 + D.dmg / 40);
   G.shake = Math.min(DATA.fx.maxShake, G.shake + D.dmg * DATA.fx.shakePerDmg + 3);
   G.texts.push({ x: 1600, y: 690, s: '-' + D.dmg + ' CHILL', c: '#ff5070', t: 0, dur: 1.2, size: 40, vy: -60, pop: true });
@@ -413,11 +424,13 @@ function upgrade(pi) {
   G.texts.push({ x: tw.x, y: tw.y - 60, s: 'LEVEL ' + tw.level, c: DATA.towers[tw.type].color, t: 0, dur: 1, size: 30, vy: -40, pop: true });
   SFX.play('upgrade');
 }
+function sellValue(tw) { return Math.round(tw.spent * DATA.economy.sellRefund); }
 function sell(pi) {
-  const tw = G.towers[pi]; if (!tw) return; const v = Math.round(tw.spent * DATA.economy.sellRefund);
+  const tw = G.towers[pi]; if (!tw || G.phase === 'defeat' || G.phase === 'results') return false; const v = sellValue(tw);
   G.gold += v; G.towers[pi] = null; view.sel = -1;
-  G.texts.push({ x: tw.x, y: tw.y - 40, s: '+' + v, c: '#ffd23f', t: 0, dur: 0.9, size: 28, vy: -50 });
-  SFX.play('sell');
+  G.texts.push({ x: tw.x, y: tw.y - 40, s: 'SOLD +' + v + 'g', c: '#ffd23f', t: 0, dur: 1.2, size: 30, vy: -50, pop: true });
+  G.rings.push({ x: tw.x, y: tw.y, r: 20, r2: 90, t: 0, dur: 0.4, c: '#ff3b4f', w: 6 });
+  SFX.play('sell'); return true;
 }
 function targetFor(tw, range) {
   let best = null;
@@ -476,7 +489,7 @@ const AFK = { on: false, think: 0, rounds: 1, chatWins: 0, npcWins: 0, last: nul
 const AFK_PLAN = [['laser', 1], ['hammer', 3], ['slow', 4], ['cannon', 0], ['laser', 5], ['cannon', 7], ['hammer', 2], ['laser', 6]];
 function trimSession(s) {
   const e = Object.entries(s); if (e.length <= DATA.afk.sessionCap) return s;
-  const o = {}; for (const [u, v] of e.sort((a, b) => b[1].dmg - a[1].dmg || b[1].spawns - a[1].spawns).slice(0, DATA.afk.sessionCap)) o[u] = v; return o;
+  const o = {}; for (const [u, v] of e.sort(byPts).slice(0, DATA.afk.sessionCap)) o[u] = v; return o;
 }
 function setAfk(v, why) {
   v = !!v; if (AFK.on === v) { syncAfkUI(); return; }
@@ -570,7 +583,8 @@ function update(dt) {
       e.flash = Math.max(0, e.flash - dt); e.slowT -= dt; if (e.slowT <= 0) e.slowAmt = 0;
       let m = (1 - e.slowAmt) * ff;
       for (const o of G.enemies) if (o !== e && !o.dead && o.type === 'lag' && dist(o.x, o.y, e.x, e.y) < DATA.enemies.lag.aura) { m *= DATA.enemies.lag.auraBuff; break; }
-      e.cur = e.speed * m; e.d += e.cur * dt;
+      e.cur = e.speed * m; const d0 = e.d; e.d = Math.min(PATH.len, e.d + e.cur * dt);
+      if (!e.isBot && e.d > 0) credit(e, (e.d - Math.max(0, d0)) * DATA.score.perPx);   // distance marched along the path
       const p = pathAt(e.d); e.x = p.x; e.y = p.y; e.ang = p.ang;
       if (e.d >= PATH.len) deskHit(e);
     }

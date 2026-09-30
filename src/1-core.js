@@ -67,8 +67,11 @@ const DATA = {
   // CROW BOSS: the old code-drawn smoking crow, an ally the streamer deploys (key B / the button under the chill meter)
   crowBoss: { unlockWave: 5, cooldown: 90, duration: 12, puffEvery: 1.4, radius: 270, dmg: 45, dmgPerWave: 0.12, slow: 0.5, slowDur: 2.5, chillOnDeploy: 8, perch: [1070, 770], scale: 0.5, bossMult: 2.5 },
   kick: { pusherKey: '32cbd69e4b950bf97679', cluster: 'us2', version: '8.4.0-rc2', knownRooms: { croww: '962037' }, pingEvery: 60 },
+  // TOP ATTACKERS points (chat minions only): perHp per point of tower damage the minion soaks (HP it loses, capped at what it had),
+  // perPx per pixel it walks along the path (~2800px desk to door), plus a desk-hit bonus of desk + deskPerChill * the chill it takes.
+  score: { perHp: 0.2, perPx: 0.01, desk: 50, deskPerChill: 5 },
   fx: { shakePerDmg: 0.9, maxShake: 26 },
-  ticker: 'HOW TO PLAY:  type  !bug  !troll  !lag  !spam  in chat to send attackers at Croww\'s desk   \u2022   fill the HYPE meter with chat to unlock  !boss   \u2022   every minute chat votes a hazard with  !1  !2  !3   \u2022   your name rides above your minion - hit the desk to top the TOP ATTACKERS board   \u2022   cooldown per chatter: {CD}s   \u2022   '
+  ticker: 'HOW TO PLAY:  type  !bug  !troll  !lag  !spam  in chat to send attackers at Croww\'s desk   \u2022   fill the HYPE meter with chat to unlock  !boss   \u2022   every minute chat votes a hazard with  !1  !2  !3   \u2022   your name rides above your minion - soak tower hits, march far and hit the desk to top the TOP ATTACKERS board   \u2022   cooldown per chatter: {CD}s   \u2022   '
 };
 
 /* ===================================================================== utils */
