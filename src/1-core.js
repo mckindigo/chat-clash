@@ -12,10 +12,12 @@ const DATA = {
   W: 1920, H: 1080,
   path: [[405,250],[560,250],[560,820],[820,820],[820,300],[1080,300],[1080,640],[1300,640],[1300,850],[1545,850]],
   pads: [[460,450],[690,560],[690,945],[950,470],[950,690],[1190,510],[1190,945],[1420,740]],
-  economy: { startGold: 160, trickle: 1.5, sellRefund: 0.6,
+  // income is mostly EARNED: kills + a wave-clear bonus (clearBase + clearPerWave * wave); the passive trickle is small.
+  // killMult scales every enemy's gold; npcKillMult further scales the house NPCs (they are numerous).
+  economy: { startGold: 200, trickle: 0.4, sellRefund: 0.6, killMult: 0.55, npcKillMult: 1, chatKillMult: 1, clearBase: 15, clearPerWave: 12, copyStep: 0.25,
     // small-chat boost: fewer chatters = fewer chat enemies to farm, so the trickle (and a little kill gold) scales up.
     // boost k = 1 at 0 active chatters, fading linearly to 0 at smallChatFull chatters.
-    smallChatFull: 8, smallTrickleBonus: 1.5, smallKillBonus: 0.1, activeWindow: 120 },
+    smallChatFull: 8, smallTrickleBonus: 0.1, smallKillBonus: 0.35, activeWindow: 120 },
   // small-chat scaling of chat power (k = small-chat boost 0..1, same k as the gold boost)
   smallChat: { cooldown: 7, cooldownCurve: 1.6, hpBoost: { bug: 0.4, troll: 0.6, lag: 0.4, spam: 0.3 }, spamExtra: 3, hypeGain: 4, hypeDecayCut: 0.7 },
   chill: { max: 100, regenOnClear: 6 },
@@ -35,12 +37,12 @@ const DATA = {
     boss:  { label: 'BOSS',  desc: 'unlocks at full HYPE', hp: 1700, speed: 36,  gold: 150, dmg: 35, r: 56, cost: 0 }
   },
   towers: {
-    hammer: { name: 'Mod Hammer',   key: '1', desc: 'Melee slam, splash damage',    cost: 60,  range: 150, dmg: 34, rate: 1.1, splash: 95, color: '#ffb03a' },
-    laser:  { name: 'Ban Laser',    key: '2', desc: 'Single-target beam, high DPS', cost: 80,  range: 270, dps: 44, color: '#ff3b5c' },
-    slow:   { name: 'Slow Mode',    key: '3', desc: 'Pulse slows everyone nearby',  cost: 70,  range: 210, slow: 0.45, dur: 1.5, rate: 1.0, dmg: 5, color: '#5ab8ff' },
-    cannon: { name: 'Emote Cannon', key: '4', desc: 'Lobbed emotes, big AoE',       cost: 110, range: 290, dmg: 50, rate: 1.9, splash: 115, projSpeed: 1.1, color: '#ffd23f' }
+    hammer: { name: 'Mod Hammer',   key: '1', desc: 'Melee slam, splash damage',    cost: 100, range: 150, dmg: 34, rate: 1.1, splash: 95, color: '#ffb03a' },
+    laser:  { name: 'Ban Laser',    key: '2', desc: 'Single-target beam, high DPS', cost: 135, range: 270, dps: 44, color: '#ff3b5c' },
+    slow:   { name: 'Slow Mode',    key: '3', desc: 'Pulse slows everyone nearby',  cost: 120, range: 210, slow: 0.45, dur: 1.5, rate: 1.0, dmg: 5, color: '#5ab8ff' },
+    cannon: { name: 'Emote Cannon', key: '4', desc: 'Lobbed emotes, big AoE',       cost: 185, range: 290, dmg: 50, rate: 1.9, splash: 115, projSpeed: 1.1, color: '#ffd23f' }
   },
-  upgrade: { maxLevel: 3, costMult: [0, 0.85, 1.3], dmgMult: 1.55, rangeMult: 1.1, rateMult: 0.88, slowAdd: 0.08 },
+  upgrade: { maxLevel: 3, costMult: [0, 1.0, 1.5], dmgMult: 1.55, rangeMult: 1.1, rateMult: 0.88, slowAdd: 0.08 },
   vote: { firstDelay: 40, interval: 60, duration: 20, hazardDuration: 25 },
   hazards: {
     fog:      { name: 'FOG',          desc: 'Towers lose 30% range',    range: 0.7, color: '#b9c3d6' },

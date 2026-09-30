@@ -261,7 +261,7 @@ function drawMenu(t) {
   for (const b of btns) {
     const hov = view.hoverBtn === b.kind + (b.type || '');
     let label = '', can = true, col = '#7fb069';
-    if (b.kind === 'build') { const D = DATA.towers[b.type]; can = G.gold >= D.cost; col = D.color; label = D.cost + 'g'; }
+    if (b.kind === 'build') { const D = DATA.towers[b.type], c = towerCost(b.type); can = G.gold >= c; col = D.color; label = c + 'g'; }
     else if (b.kind === 'up') { const c = upCost(tw); can = c > 0 && G.gold >= c; label = c ? c + 'g' : 'MAX'; col = '#8fca6a'; }
     else { label = '+' + Math.round(tw.spent * DATA.economy.sellRefund); col = '#ffd23f'; }
     ctx.save();
@@ -278,9 +278,9 @@ function drawMenu(t) {
     if (hov) tip = b;
   }
   let title = '', l1 = '', l2 = '';
-  if (tip && tip.kind === 'build') { const D = DATA.towers[tip.type]; title = D.name + '  -  ' + D.cost + 'g'; l1 = D.desc; l2 = statLine(tip.type, 1); }
+  if (tip && tip.kind === 'build') { const D = DATA.towers[tip.type], c = towerCost(tip.type), own = G.towers.filter(x => x && x.type === tip.type).length; title = D.name + '  -  ' + c + 'g' + (own ? '  (' + own + ' owned, +' + Math.round(DATA.economy.copyStep * 100) + '% each)' : ''); l1 = D.desc; l2 = statLine(tip.type, 1); }
   else if (tw) { const D = DATA.towers[tw.type]; title = D.name + '  LV ' + tw.level; l1 = statLine(tw.type, tw.level); l2 = tw.level < DATA.upgrade.maxLevel ? 'Upgrade (U) ' + upCost(tw) + 'g \u2192 ' + statLine(tw.type, tw.level + 1) : 'MAX LEVEL  \u2022  X to sell'; if (tip && tip.kind === 'sell') l2 = 'Sell (X) for ' + Math.round(tw.spent * DATA.economy.sellRefund) + 'g'; }
-  else { title = 'BUILD A TOWER'; l1 = 'Hover for info  \u2022  keys 1-4 to build'; l2 = 'Gold: kills + a steady trickle'; }
+  else { title = 'BUILD A TOWER'; l1 = 'Hover for info  \u2022  keys 1-4 to build'; l2 = 'Gold: kills + wave-clear bonus (small trickle)'; }
   const TR = menuTooltipRect(btns), bw = TR.w, bx = TR.x, by = TR.y;
   panel(bx, by, bw, TR.h, '#7fb069', 0.95);
   T(title, bx + 16, by + 22, 24, '#fff', 'left', { w: 900 });

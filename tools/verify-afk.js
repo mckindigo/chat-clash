@@ -23,7 +23,7 @@ const FAKE_WS = () => {
   ok(s0.afk && s0.title <= 0 && s0.live === 'live', '?afk=1 starts AFK, skips the title card, Kick live ' + JSON.stringify(s0));
   await sleep(9000);
   const b = await page.evaluate(() => ({ towers: CC.G.towers.filter(Boolean).map(t => t.type), phase: CC.G.phase }));
-  ok(b.towers.length >= 2, 'bot builds towers on its own: ' + b.towers.join(','));
+  ok(b.towers.length >= 1, 'bot builds towers on its own (200g start buys 1 at new prices): ' + b.towers.join(','));
   await page.evaluate(() => { kickSay('Moonpie_77', '!troll'); kickSay('crowwfan', '!spam'); kickSay('lurker', '!1'); });
   await sleep(6000);
   const k = await page.evaluate(() => ({ phase: CC.G.phase, troll: CC.G.enemies.filter(e => e.user === 'Moonpie_77').length + CC.G.chatQueue.filter(q => q.user === 'Moonpie_77').length, session: Object.keys(CC.G.session) }));

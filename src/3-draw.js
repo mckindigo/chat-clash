@@ -134,7 +134,7 @@ function drawTowerIcon(type, x, y, s, t, ang, anim, recoil, level) {
   if (level) for (let i = 0; i < level; i++) { const px = x - (level - 1) * 11 + i * 22; ctx.save(); ctx.translate(px, y + 44 * s); ctx.beginPath(); for (let j = 0; j < 10; j++) { const a = j / 10 * 6.283 - Math.PI / 2, rr2 = j % 2 ? 4 : 9; ctx.lineTo(Math.cos(a) * rr2, Math.sin(a) * rr2); } ctx.closePath(); fs('#ffd23f', 3); ctx.restore(); }
 }
 function drawPadsTowers(t) {
-  const minCost = Math.min(...Object.values(DATA.towers).map(v => v.cost));
+  const minCost = cheapestTowerCost();
   DATA.pads.forEach(([x, y], i) => {
     if (G.towers[i]) return;
     const hov = view.hoverPad === i || view.sel === i, canBuy = G.gold >= minCost, col = canBuy ? '#7fb069' : '#6e604a';

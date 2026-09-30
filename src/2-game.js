@@ -41,12 +41,14 @@ function startWave() {
 }
 function waveCleared() {
   G.score = G.wave;
+  const bonus = Math.round(waveBonus(G.wave) * diff().gold); G.gold += bonus;
+  G.texts.push({ x: 1200, y: 60, s: '+' + bonus + 'g WAVE BONUS', c: '#ffd23f', t: 0, dur: 1.8, size: 30, vy: -10, pop: true });
   G.chill = Math.min(DATA.chill.max, G.chill + DATA.chill.regenOnClear);
   let top = null;
   for (const u in G.waveStats) { const s = G.waveStats[u]; if (!top || s.dmg > top.s.dmg || (s.dmg === top.s.dmg && s.spawns > top.s.spawns)) top = { u, s }; }
   G.card = { t: 0, dur: 5, wave: G.wave, top };
   G.crow.ringT = 2.6;
-  banner('WAVE ' + G.wave + ' CLEARED', '+' + DATA.chill.regenOnClear + ' chill  \u2022  Croww stays cozy', '#8fca6a', 2.6, 'crowwW');
+  banner('WAVE ' + G.wave + ' CLEARED', '+' + bonus + ' gold  \u2022  +' + DATA.chill.regenOnClear + ' chill  \u2022  Croww stays cozy', '#8fca6a', 2.6, 'crowwW');
   SFX.play('clear');
   saveBest(G.score);
   if (G.wave >= DATA.crowBoss.unlockWave) unlockCrowBoss('survived wave ' + G.wave);
@@ -78,7 +80,7 @@ function dmgEnemy(e, amt, src) {
   if (src !== 'laser') SFX.play('hit');
   if (e.hp <= 0) {
     e.dead = true; G.kills++;
-    const g = Math.round(DATA.enemies[e.type].gold * diff().gold * killGoldMult()); G.gold += g;
+    const g = Math.round(DATA.enemies[e.type].gold * DATA.economy.killMult * (e.isBot ? DATA.economy.npcKillMult : DATA.economy.chatKillMult) * diff().gold * killGoldMult()); G.gold += g;
     G.texts.push({ x: e.x, y: e.y - 20, s: '+' + g, c: '#ffd23f', t: 0, dur: 0.9, size: 26, vy: -60 });
     const col = { bug: '#9be34a', troll: '#72b35e', lag: '#3fc8ff', spam: '#ff7ac8', boss: '#ff4060' }[e.type];
     const cnt = e.type === 'boss' ? 60 : e.type === 'troll' ? 22 : 12;
@@ -365,10 +367,14 @@ function tStats(tw) {
   return { range: b.range * Math.pow(u.rangeMult, l) * fog, baseRange: b.range * Math.pow(u.rangeMult, l), dmg: (b.dmg || 0) * Math.pow(u.dmgMult, l), dps: (b.dps || 0) * Math.pow(u.dmgMult, l),
     rate: (b.rate || 0) * Math.pow(u.rateMult, l), splash: b.splash ? b.splash * (1 + 0.1 * l) : 0, slow: b.slow ? Math.min(0.75, b.slow + u.slowAdd * l) : 0, dur: b.dur || 0 };
 }
+/* tower price: base cost +copyStep (25%) for every tower of that type already owned; rounded to 5g */
+function towerCost(type) { const owned = G ? G.towers.filter(t => t && t.type === type).length : 0; return Math.round(DATA.towers[type].cost * (1 + DATA.economy.copyStep * owned) / 5) * 5; }
+function cheapestTowerCost() { return Math.min(...Object.keys(DATA.towers).map(towerCost)); }
+function waveBonus(w) { return Math.round(DATA.economy.clearBase + DATA.economy.clearPerWave * w); }
 function upCost(tw) { return tw.level >= DATA.upgrade.maxLevel ? 0 : Math.round(DATA.towers[tw.type].cost * DATA.upgrade.costMult[tw.level]); }
 function build(pi, type) {
   if (G.towers[pi] || G.phase === 'defeat' || G.phase === 'results') return false;
-  const c = DATA.towers[type].cost; if (G.gold < c) { SFX.play('click'); return false; }
+  const c = towerCost(type); if (G.gold < c) { SFX.play('click'); return false; }
   G.gold -= c; const [x, y] = DATA.pads[pi];
   G.towers[pi] = { type, level: 1, cd: 0.3, ang: -Math.PI / 2, anim: 0, recoil: 0, beam: null, spent: c, x, y, pulse: 0, place: 1 };
   G.rings.push({ x, y, r: 20, r2: 90, t: 0, dur: 0.4, c: DATA.towers[type].color, w: 6 });
@@ -470,7 +476,7 @@ function afkTick(dt) {
   // build the next planned tower, else the cheapest useful upgrade
   const next = AFK_PLAN.find(([, pi]) => !G.towers[pi]);
   const ups = G.towers.map((tw, i) => tw && tw.level < DATA.afk.maxLevel ? { i, c: upCost(tw) } : null).filter(x => x && x.c > 0).sort((a, b) => a.c - b.c);
-  const nCost = next ? DATA.towers[next[0]].cost : Infinity, built = G.towers.filter(Boolean).length;
+  const nCost = next ? towerCost(next[0]) : Infinity, built = G.towers.filter(Boolean).length;
   const money = G.gold - DATA.afk.reserve;
   if (next && (built < 4 || !ups.length || nCost <= ups[0].c * 1.4)) { if (money >= nCost) build(next[1], next[0]); }
   else if (ups.length && money >= ups[0].c) upgrade(ups[0].i);

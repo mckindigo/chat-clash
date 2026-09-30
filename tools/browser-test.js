@@ -24,7 +24,7 @@ const ok = (c, m) => { if (!c) { console.log('FAIL', m); process.exitCode = 1; }
     const page = await open(W, H);
     const assets = await page.evaluate(() => ({ font: document.fonts.check('700 40px Oswald'), emotes: Object.values(EMOTES).filter(i => i.naturalWidth === 112).length }));
     ok(assets.font && assets.emotes === 4, tag + ' Oswald + 4 emotes embedded: ' + JSON.stringify(assets));
-    await page.evaluate(() => { CC.manual(true); CC.G.gold = 1000; });
+    await page.evaluate(() => { CC.manual(true); CC.G.gold = 2000; });
     // build with real mouse clicks: pad 0 -> hammer button (first), pad 3 -> laser, etc
     const pads = await page.evaluate(() => CC.DATA.pads);
     const plan = [[0, 0], [1, 1], [3, 3], [4, 2], [5, 1], [7, 0]];
