@@ -1,0 +1,17 @@
+{
+  "name": "chat-clash",
+  "version": "0.1.0",
+  "description": "CHAT CLASH - stream-interactive tower defense for Croww (Kick chat spawns the enemies)",
+  "scripts": {
+    "build": "node tools/build.js",
+    "test": "node tools/browser-test.js",
+    "live-test": "node tools/kick-live-test.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer-core": "^23.11.1",
+    "ws": "^8.22.0"
+  }
+}

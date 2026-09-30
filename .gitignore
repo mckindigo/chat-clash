@@ -1,0 +1,11 @@
+node_modules/
+.venv/
+brand/*
+!brand/emotes/
+brand/emotes/*
+!brand/emotes/crowwHype/
+!brand/emotes/crowwW/
+!brand/emotes/crowwL/
+!brand/emotes/crowwLUL/
+brand/emotes/*/*
+!brand/emotes/*/*_112.png
