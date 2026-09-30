@@ -3,7 +3,8 @@ let G = null;
 const view = { titleT: 4.5, hoverPad: -1, sel: -1, hoverBtn: null, mx: 0, my: 0, settingsOpen: false };
 const feed = [];
 const cooldowns = {};
-function newGame() {
+function newGame(keepSession) {
+  const carry = keepSession && G ? G.session : null;
   G = {
     time: 0, gold: DATA.economy.startGold, chill: DATA.chill.max, wave: 1, score: 0, phase: 'build', phaseT: DATA.wave.firstBuild,
     waveT: 0, waveDur: 0, aiBudget: 0, aiTimer: 0, aiGap: 1, release: [], releaseT: 0, chatQueue: [],
@@ -12,6 +13,8 @@ function newGame() {
     shake: 0, defeatT: 0, card: null, kills: 0, paused: false, eid: 0, deskFlash: 0, redFlash: 0,
     crow: { hitT: 0, ringT: 0, cycle: 0, coughT: 0 }, crowBoss: { active: false, t: 0, cd: 0, puffT: 0, puffs: 0 }, resultsBtn: null, resultsAt: 0, bestAtStart: bestScore()
   };
+  if (carry) G.session = trimSession(carry);   // AFK rounds: the TOP ATTACKERS board carries over
+  G.dmgChat = 0; G.dmgNpc = 0;
   for (const k in cooldowns) delete cooldowns[k];
   heldChat.length = 0;
   view.sel = -1;
@@ -53,6 +56,7 @@ function defeat() {
   G.phase = 'defeat'; G.defeatT = 0; G.chill = 0; G.shake = DATA.fx.maxShake; view.sel = -1; G.vote = null; G.hazard = null;
   banner('CHILL LOST', 'Croww is on the floor', '#ff5070', 2.8, 'crowwL');
   SFX.play('lose'); saveBest(G.score);
+  if (AFK.on) afkRoundOver();
 }
 
 /* ===================================================================== enemies */
@@ -90,7 +94,7 @@ function deskHit(e) {
   if (G.phase !== 'wave' && G.phase !== 'build') return;
   const D = DATA.enemies[e.type];
   G.chill -= D.dmg;
-  if (!e.isBot) { stat(G.waveStats, e.user).dmg += D.dmg; stat(G.session, e.user).dmg += D.dmg; }
+  if (!e.isBot) { stat(G.waveStats, e.user).dmg += D.dmg; stat(G.session, e.user).dmg += D.dmg; G.dmgChat += D.dmg; } else G.dmgNpc += D.dmg;
   G.crow.hitT = 0.6; G.crow.coughT = 1.2; G.deskFlash = 0.3; G.redFlash = Math.min(1, 0.25 + D.dmg / 40);
   G.shake = Math.min(DATA.fx.maxShake, G.shake + D.dmg * DATA.fx.shakePerDmg + 3);
   G.texts.push({ x: 1600, y: 690, s: '-' + D.dmg + ' CHILL', c: '#ff5070', t: 0, dur: 1.2, size: 40, vy: -60, pop: true });
@@ -425,10 +429,61 @@ function crowPuff(x, y, big) {
   G.smoke.push({ x, y, vx: rand(-25, 10) - (big ? 40 : 0), vy: rand(-45, -25), r: big ? rand(10, 16) : rand(4, 7), gr: big ? rand(22, 34) : rand(12, 20), t: 0, dur: big ? rand(1.4, 2.2) : rand(2, 3.2), a: big ? 0.55 : 0.33, steam: settings.clean, w: Math.random() * 6 });
 }
 
+/* ===================================================================== AFK / autoplay
+   The bot builds, upgrades, deploys the Crow Boss and restarts after a loss, so the game loops forever on a BRB scene.
+   Real chat keeps playing against it. Any key/click (or the A button/hotkey) hands control back to Croww. */
+const AFK = { on: false, think: 0, rounds: 1, chatWins: 0, npcWins: 0, last: null, since: 0 };
+const AFK_PLAN = [['laser', 1], ['hammer', 3], ['slow', 4], ['cannon', 0], ['laser', 5], ['cannon', 7], ['hammer', 2], ['laser', 6]];
+function trimSession(s) {
+  const e = Object.entries(s); if (e.length <= DATA.afk.sessionCap) return s;
+  const o = {}; for (const [u, v] of e.sort((a, b) => b[1].dmg - a[1].dmg || b[1].spawns - a[1].spawns).slice(0, DATA.afk.sessionCap)) o[u] = v; return o;
+}
+function setAfk(v, why) {
+  v = !!v; if (AFK.on === v) { syncAfkUI(); return; }
+  AFK.on = v; AFK.think = 0.5; AFK.since = gameClock;
+  if (v) {
+    if (G && G.paused) setPaused(false);
+    view.titleT = 0; view.sel = -1;
+    if (G) banner('CROWW IS AFK', 'the bot is defending \u2022 type !bug !troll !spam to attack', '#e0b45c', 3.2, 'crowwLUL');
+  } else if (G) banner('CROWW IS BACK', why || 'you have control again', '#8fca6a', 2.2, 'crowwW');
+  syncAfkUI();
+}
+function syncAfkUI() { const el = document.getElementById('sAfk'); if (el) el.checked = AFK.on; }
+function afkRoundOver() {
+  const chat = G.dmgChat >= G.dmgNpc && G.dmgChat > 0;
+  if (chat) AFK.chatWins++; else AFK.npcWins++;
+  AFK.last = { chat, wave: G.wave, chatDmg: G.dmgChat, npcDmg: G.dmgNpc };
+  banner(chat ? 'CHAT WINS!' : 'THE NPCS WIN', chat ? 'chat broke the bot on wave ' + G.wave : 'the house waves got through on wave ' + G.wave, chat ? '#ffd23f' : '#ff5070', 3, chat ? 'crowwHype' : 'crowwL');
+}
+function afkTick(dt) {
+  if (!AFK.on) return;
+  if (G.phase === 'results') { if (G.time - G.resultsAt >= DATA.afk.restartAfter) { AFK.rounds++; newGame(true); banner('ROUND ' + AFK.rounds, 'the bot rebuilt the desk \u2022 chat: type !bug to attack', '#e0b45c', 2.6); } return; }
+  if (G.phase === 'defeat') return;
+  // watchdog: a wave that somehow never clears gets cleared (never stuck when unattended)
+  if (G.phase === 'wave' && G.waveT > G.waveDur + DATA.afk.watchdog) { G.enemies = []; G.release = []; }
+  AFK.think -= dt; if (AFK.think > 0) return; AFK.think = DATA.afk.think;
+  // Crow Boss when it is useful: a crowd near the perch, or chill getting low with enemies on the field
+  if (crowBossState() === 'ready' && G.phase === 'wave') {
+    const P = DATA.crowBoss.perch, near = G.enemies.filter(e => !e.dead && e.d >= 0 && dist(e.x, e.y, P[0], P[1]) <= DATA.crowBoss.radius).length;
+    if (near >= DATA.afk.crowNear || (G.chill < 55 && G.enemies.length >= 3)) deployCrowBoss();
+  }
+  // build the next planned tower, else the cheapest useful upgrade
+  const next = AFK_PLAN.find(([, pi]) => !G.towers[pi]);
+  const ups = G.towers.map((tw, i) => tw && tw.level < DATA.afk.maxLevel ? { i, c: upCost(tw) } : null).filter(x => x && x.c > 0).sort((a, b) => a.c - b.c);
+  const nCost = next ? DATA.towers[next[0]].cost : Infinity, built = G.towers.filter(Boolean).length;
+  const money = G.gold - DATA.afk.reserve;
+  if (next && (built < 4 || !ups.length || nCost <= ups[0].c * 1.4)) { if (money >= nCost) build(next[1], next[0]); }
+  else if (ups.length && money >= ups[0].c) upgrade(ups[0].i);
+  // build phase: once the bot has spent what it can, start the wave a little early to keep the show moving
+  if (G.phase === 'build' && G.phaseT > DATA.afk.earlyStart && built >= 2 && G.time > 3 && money < Math.min(nCost, ups.length ? ups[0].c : Infinity)) G.phaseT = Math.min(G.phaseT, DATA.afk.earlyStart);
+}
+
 /* ===================================================================== main update */
 function update(dt) {
   if (!G) return;
   gameClock += dt;
+  afkTick(dt);
+  if (!G) return;
   botTick(dt);
   updateCrowBoss(dt);
   const C = G.crow;

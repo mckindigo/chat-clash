@@ -18,6 +18,26 @@ function drawPauseBtn(x, y, paused, t) {
   else { rr(x - 10, y - 12, 7, 24, 2); fs(DATA.pal.maroon); rr(x + 3, y - 12, 7, 24, 2); fs(DATA.pal.maroon); }
   ctx.restore();
 }
+function drawAfkBtn(x, y, on, t) {
+  const hov = dist(view.mx, view.my, x, y) < 26;
+  ctx.save(); if (on) { ctx.shadowBlur = 12 + Math.sin(t * 4) * 5; ctx.shadowColor = '#e0b45c'; }
+  circ(x, y, 24); fs(on ? '#e0b45c' : hov ? 'rgba(74,26,26,0.15)' : 'rgba(0,0,0,0)', 4, DATA.pal.maroon); ctx.restore();
+  // little robot head
+  rr(x - 13, y - 9, 26, 20, 6); fs(on ? DATA.pal.maroon : 'rgba(0,0,0,0)', 3, DATA.pal.maroon);
+  circ(x - 5, y + 1, 3); fs(on ? '#ffd23f' : DATA.pal.maroon); circ(x + 5, y + 1, 3); fs(on ? '#ffd23f' : DATA.pal.maroon);
+  ctx.strokeStyle = DATA.pal.maroon; ctx.lineWidth = 3; line(x, y - 9, x, y - 15); circ(x, y - 16, 2.5); fs(DATA.pal.maroon);
+  T('A', x + 17, y + 17, 13, DATA.pal.maroon, 'center', { w: 900, stroke: false });
+}
+function drawAfkBanner(t) {
+  if (!AFK.on || G.phase === 'results') return;
+  const w = 1060, h = 44, x = 940 - w / 2, y = 984, pulse = 0.5 + 0.5 * Math.sin(t * 3);
+  ctx.save(); ctx.shadowBlur = 14 + pulse * 10; ctx.shadowColor = '#e0b45c'; rr(x, y, w, h, 14); ctx.fillStyle = 'rgba(20,8,8,0.93)'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#e0b45c'; ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  T('CROWW IS AFK: THE BOT IS DEFENDING', x + 20, y + h / 2 + 1, 24, '#ffd23f', 'left', { w: 900, sw: 5 });
+  T('TYPE !bug TO ATTACK', x + 468, y + h / 2 + 1, 24, '#fef9e5', 'left', { w: 900, sw: 5 });
+  T('ROUND ' + AFK.rounds + '  \u2022  CHAT WINS ' + AFK.chatWins + '  \u2022  NPC WINS ' + AFK.npcWins, x + w - 18, y + h / 2 + 1, 19, '#bfae86', 'right', { w: 800, stroke: false });
+  ctx.restore();
+}
 function drawPaused(rt) {
   ctx.fillStyle = 'rgba(10,5,4,0.72)'; ctx.fillRect(0, 90, 1920, 950);
   const w = 820, h = 420, x = 960 - w / 2, y = 290, pulse = 0.5 + 0.5 * Math.sin(rt * 2.4);
@@ -47,9 +67,10 @@ function drawTopBar(t) {
   T('BEST ' + Math.max(bestScore(), G.score), 1350, 62, 20, P.olive, 'left', { w: 500, stroke: false });
   const st = Kick.status, tm = testModeActive();
   const lc = st === 'live' ? '#3fae3a' : st === 'connecting' ? '#e0a020' : st === 'error' ? '#c0302a' : '#9c8a68';
-  ctx.save(); ctx.shadowBlur = st === 'live' ? 14 : 0; ctx.shadowColor = lc; circ(1530, 46, 12 + (st === 'live' ? Math.sin(t * 4) * 1.5 : 0)); fs(lc, 3, P.maroon); ctx.restore();
-  T(fit(st === 'live' ? 'LIVE  #' + settings.channel : st === 'connecting' ? 'CONNECTING\u2026' : 'CHAT OFFLINE', 22, 178, 700), 1552, 32, 22, P.maroon, 'left', { w: 700, stroke: false });
-  T(fit(tm ? 'TEST MODE (BOTS)' : st === 'live' ? Kick.msgs + ' msgs read' : 'press S to connect', 19, 170, 500), 1552, 62, 19, tm ? P.tan : P.olive, 'left', { w: 500, stroke: false });
+  ctx.save(); ctx.shadowBlur = st === 'live' ? 14 : 0; ctx.shadowColor = lc; circ(1552, 46, 11 + (st === 'live' ? Math.sin(t * 4) * 1.5 : 0)); fs(lc, 3, P.maroon); ctx.restore();
+  T(fit(st === 'live' ? 'LIVE  #' + settings.channel : st === 'connecting' ? 'CONNECTING\u2026' : 'CHAT OFFLINE', 22, 162, 700), 1570, 32, 22, P.maroon, 'left', { w: 700, stroke: false });
+  T(fit(tm ? 'TEST MODE (BOTS)' : st === 'live' ? Kick.msgs + ' msgs read' : 'press S to connect', 19, 162, 500), 1570, 62, 19, tm ? P.tan : P.olive, 'left', { w: 500, stroke: false });
+  drawAfkBtn(1500, 46, AFK.on, t);
   drawPauseBtn(1762, 46, G.paused, t);
   drawSpeaker(1822, 46, settings.muted);
   drawGear(1884, 46, 22, t);
@@ -293,7 +314,10 @@ function drawResults() {
   G.resultsBtn = { x: bx, y: by, w: bw, h: bh };
   rr(bx, by, bw, bh, 18); fs(hov ? P.forest : P.maroon, 5, P.maroon);
   T('PLAY AGAIN', 960, by + bh / 2 + 2, 42, P.cream, 'center', { w: 700, stroke: false });
-  T('or press Enter', 960, by + bh + 20, 18, P.olive, 'center', { stroke: false });
+  if (AFK.on) {
+    const left = Math.max(0, Math.ceil(DATA.afk.restartAfter - (G.time - G.resultsAt)));
+    T((AFK.last && AFK.last.chat ? 'CHAT WINS THIS ROUND!  ' : 'THE NPCS WIN THIS ROUND  ') + '\u2022  next round in ' + left + 's  \u2022  chat ' + AFK.chatWins + ' : ' + AFK.npcWins + ' bot', 960, by + bh + 22, 22, P.maroon, 'center', { w: 800, stroke: false });
+  } else T('or press Enter', 960, by + bh + 20, 18, P.olive, 'center', { stroke: false });
   ctx.restore();
 }
 function drawBlackout() {
@@ -370,6 +394,7 @@ function render(t) {
   drawTopBar(t);
   drawDrain(t);
   drawTicker(t);
+  drawAfkBanner(t);
   drawMenu(t);   // last of the in-game layers: the build ring is never hidden under side panels / banners
   if (G.phase === 'results') drawResults();
   drawTitle(t);
@@ -388,11 +413,13 @@ function inRect(p, b) { return b && p.x > b.x && p.x < b.x + b.w && p.y > b.y &&
 cv.addEventListener('mousemove', e => {
   const p = toGame(e); view.mx = p.x; view.my = p.y; if (!G) return;
   const h = hitTest(p.x, p.y); view.hoverPad = h.pad != null ? h.pad : -1;
-  const icon = dist(p.x, p.y, 1884, 46) < 30 || dist(p.x, p.y, 1826, 46) < 26 || dist(p.x, p.y, 1762, 46) < 26;
+  const icon = dist(p.x, p.y, 1884, 46) < 30 || dist(p.x, p.y, 1826, 46) < 26 || dist(p.x, p.y, 1762, 46) < 26 || dist(p.x, p.y, 1500, 46) < 26;
   cv.style.cursor = (h.btn || h.pad != null || icon || (G.phase === 'results' && inRect(p, G.resultsBtn))) ? 'pointer' : 'default';
 });
 cv.addEventListener('mousedown', e => {
   SFX.init(); const p = toGame(e); if (!G) return;
+  if (dist(p.x, p.y, 1500, 46) < 26) { setAfk(!AFK.on, 'AFK off'); return; }
+  if (AFK.on) { setAfk(false, 'welcome back, Croww'); return; }   // any click hands control back
   if (view.titleT > 0) { view.titleT = Math.min(view.titleT, 0.8); return; }
   if (dist(p.x, p.y, 1884, 46) < 30) { toggleSettings(); return; }
   if (dist(p.x, p.y, 1762, 46) < 26) { setPaused(!G.paused); return; }
@@ -423,7 +450,9 @@ window.addEventListener('keydown', e => {
   const tag = (document.activeElement && document.activeElement.tagName) || '';
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') { if (e.key === 'Escape') document.activeElement.blur(); return; }
   const k = e.key.toLowerCase();
+  if (AFK.on) { if (!['shift', 'control', 'alt', 'meta'].includes(k)) { e.preventDefault(); setAfk(false, 'welcome back, Croww'); } return; }   // any key hands control back
   if (view.titleT > 0.8) view.titleT = 0.8;
+  if (k === 'a') { setAfk(true); return; }
   if (k === 's') { toggleSettings(); return; }
   if (k === 'm') { settings.muted = !settings.muted; SFX.apply(); saveSettings(); syncSettingsUI(); return; }
   if (!G) return;
@@ -451,7 +480,7 @@ function updateStatusUI() {
 }
 function syncSettingsUI() {
   $('sChannel').value = settings.channel; $('sRoom').value = settings.rooms[settings.channel] || '';
-  $('sTest').value = settings.testMode; $('sSmall').value = settings.smallChat; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
+  $('sTest').value = settings.testMode; $('sAfk').checked = AFK.on; $('sSmall').value = settings.smallChat; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
   $('sClean').checked = settings.clean; $('sDiff').value = settings.difficulty; $('sCd').value = settings.userCooldown; $('sCap').value = settings.globalCap;
   $('bCrow').textContent = crowBossUnlocked() ? 'Crow Boss: unlocked (B to deploy)' : 'Unlock Crow Boss now'; $('sVol').value = settings.volume; $('vVol').textContent = settings.volume + '%'; $('sMute').checked = settings.muted; updateStatusUI();
 }
@@ -463,6 +492,7 @@ $('bDisconnect').onclick = () => { settings.autoConnect = false; saveSettings();
 $('bLookup').onclick = async () => { readChannel(); delete settings.rooms[settings.channel]; $('sRoom').value = ''; const id = await Kick.lookup(); if (id) Kick.connect(); };
 $('sTest').onchange = () => { settings.testMode = normTestMode($('sTest').value, 'off'); if (!testModeActive()) stopBots(); clearTestParam(); saveSettings(); syncSettingsUI(); };
 $('sSmall').onchange = () => { settings.smallChat = $('sSmall').value; saveSettings(); };
+$('sAfk').onchange = () => setAfk($('sAfk').checked, 'AFK turned off in Settings');
 $('sNpc').onchange = () => { settings.npcWaves = $('sNpc').checked; saveSettings(); };
 $('sBotRate').oninput = () => { settings.botRate = +$('sBotRate').value; $('vBotRate').textContent = settings.botRate + ' msgs/min'; saveSettings(); };
 $('sClean').onchange = () => { settings.clean = $('sClean').checked; saveSettings(); };
@@ -482,6 +512,7 @@ function resize() { const s = Math.min(innerWidth / 1920, innerHeight / 1080); $
 window.addEventListener('resize', resize); resize();
 renderBG(); newGame(); syncSettingsUI();
 if (document.fonts) { document.fonts.load('700 40px Oswald'); document.fonts.load('400 20px Oswald'); }
+if (qs.get('afk') === '1' || qs.get('afk') === 'on') setAfk(true);
 if (settings.autoConnect) Kick.connect(); else Kick.set('off', 'auto-connect off - press Connect');
 let last = performance.now(), manual = false, animT = 0;
 function frame(now) {
@@ -499,5 +530,5 @@ window.CC = {
   get G() { return G; }, DATA, settings, Kick, feed, onChat, testModeActive, stopBots, build, upgrade, startWave, newGame, toggleSettings,
   spawn(t, u) { spawnEnemy(t, u || 'tester', false); },
   step(sec, dt) { dt = dt || 1 / 30; const n = Math.round(sec / dt); for (let i = 0; i < n; i++) update(dt); },
-  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : animT); }, setPaused, heldChat, activeChatters, goldPerSec, smallChatK, effCooldown, hypeGainMult, spamCount, forceVote() { G.voteClock = 0; }
+  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : animT); }, setPaused, heldChat, AFK, setAfk, activeChatters, goldPerSec, smallChatK, effCooldown, hypeGainMult, spamCount, forceVote() { G.voteClock = 0; }
 };

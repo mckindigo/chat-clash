@@ -48,6 +48,8 @@ html,body{margin:0;height:100%;background:#05030a;overflow:hidden}
  </div>
  <h3>Audio</h3>
  <div class="row"><label>Volume</label><input type="range" id="sVol" min="0" max="100"><span id="vVol"></span><label style="min-width:0;margin-left:20px">Mute</label><input type="checkbox" id="sMute"></div>
+ <h3>AFK / Autoplay</h3>
+ <div class="row"><label>AFK mode (bot plays)</label><input type="checkbox" id="sAfk"><span class="hint">The bot defends, chat attacks, rounds restart by themselves. Also: A key, the robot button, or ?afk=1. Any key/click on the game takes control back.</span></div>
  <h3>Crow Boss</h3>
  <div class="row"><button id="bCrow">Unlock Crow Boss now</button><span class="hint">Normally unlocks the first time you clear wave 5. Deploy with B or the button under the chill meter (90s cooldown).</span></div>
  <div class="row" style="margin-top:14px"><button id="bRestart">Restart session</button><button id="bClose">Close (S)</button></div>
@@ -106,6 +108,9 @@ const DATA = {
     drain:    { name: 'GOLD DRAIN',   desc: 'Croww loses 3 gold / sec', perSec: 3,  color: '#ffd23f' }
   },
   test: { botRate: 24, botCount: 24 },
+  // AFK / autoplay: the bot defends while Croww is away. think = seconds between decisions (a slower bot is easier
+  // for chat to beat), maxLevel caps upgrades, restartAfter = seconds on the results screen before the next round.
+  afk: { think: 2.0, maxLevel: 2, reserve: 0, restartAfter: 12, earlyStart: 5, crowNear: 5, sessionCap: 200, watchdog: 240 },
   // desk mascot image (approved art) placement on the right panel
   deskArt: { x: 1485, y: 596, size: 450, face: [0.64, 0.33], screen: [0.1, 0.3, 0.26, 0.23] },
   // CROW BOSS: the old code-drawn smoking crow, an ally the streamer deploys (key B / the button under the chill meter)
@@ -248,7 +253,8 @@ let G = null;
 const view = { titleT: 4.5, hoverPad: -1, sel: -1, hoverBtn: null, mx: 0, my: 0, settingsOpen: false };
 const feed = [];
 const cooldowns = {};
-function newGame() {
+function newGame(keepSession) {
+  const carry = keepSession && G ? G.session : null;
   G = {
     time: 0, gold: DATA.economy.startGold, chill: DATA.chill.max, wave: 1, score: 0, phase: 'build', phaseT: DATA.wave.firstBuild,
     waveT: 0, waveDur: 0, aiBudget: 0, aiTimer: 0, aiGap: 1, release: [], releaseT: 0, chatQueue: [],
@@ -257,6 +263,8 @@ function newGame() {
     shake: 0, defeatT: 0, card: null, kills: 0, paused: false, eid: 0, deskFlash: 0, redFlash: 0,
     crow: { hitT: 0, ringT: 0, cycle: 0, coughT: 0 }, crowBoss: { active: false, t: 0, cd: 0, puffT: 0, puffs: 0 }, resultsBtn: null, resultsAt: 0, bestAtStart: bestScore()
   };
+  if (carry) G.session = trimSession(carry);   // AFK rounds: the TOP ATTACKERS board carries over
+  G.dmgChat = 0; G.dmgNpc = 0;
   for (const k in cooldowns) delete cooldowns[k];
   heldChat.length = 0;
   view.sel = -1;
@@ -298,6 +306,7 @@ function defeat() {
   G.phase = 'defeat'; G.defeatT = 0; G.chill = 0; G.shake = DATA.fx.maxShake; view.sel = -1; G.vote = null; G.hazard = null;
   banner('CHILL LOST', 'Croww is on the floor', '#ff5070', 2.8, 'crowwL');
   SFX.play('lose'); saveBest(G.score);
+  if (AFK.on) afkRoundOver();
 }
 
 /* ===================================================================== enemies */
@@ -335,7 +344,7 @@ function deskHit(e) {
   if (G.phase !== 'wave' && G.phase !== 'build') return;
   const D = DATA.enemies[e.type];
   G.chill -= D.dmg;
-  if (!e.isBot) { stat(G.waveStats, e.user).dmg += D.dmg; stat(G.session, e.user).dmg += D.dmg; }
+  if (!e.isBot) { stat(G.waveStats, e.user).dmg += D.dmg; stat(G.session, e.user).dmg += D.dmg; G.dmgChat += D.dmg; } else G.dmgNpc += D.dmg;
   G.crow.hitT = 0.6; G.crow.coughT = 1.2; G.deskFlash = 0.3; G.redFlash = Math.min(1, 0.25 + D.dmg / 40);
   G.shake = Math.min(DATA.fx.maxShake, G.shake + D.dmg * DATA.fx.shakePerDmg + 3);
   G.texts.push({ x: 1600, y: 690, s: '-' + D.dmg + ' CHILL', c: '#ff5070', t: 0, dur: 1.2, size: 40, vy: -60, pop: true });
@@ -670,10 +679,61 @@ function crowPuff(x, y, big) {
   G.smoke.push({ x, y, vx: rand(-25, 10) - (big ? 40 : 0), vy: rand(-45, -25), r: big ? rand(10, 16) : rand(4, 7), gr: big ? rand(22, 34) : rand(12, 20), t: 0, dur: big ? rand(1.4, 2.2) : rand(2, 3.2), a: big ? 0.55 : 0.33, steam: settings.clean, w: Math.random() * 6 });
 }
 
+/* ===================================================================== AFK / autoplay
+   The bot builds, upgrades, deploys the Crow Boss and restarts after a loss, so the game loops forever on a BRB scene.
+   Real chat keeps playing against it. Any key/click (or the A button/hotkey) hands control back to Croww. */
+const AFK = { on: false, think: 0, rounds: 1, chatWins: 0, npcWins: 0, last: null, since: 0 };
+const AFK_PLAN = [['laser', 1], ['hammer', 3], ['slow', 4], ['cannon', 0], ['laser', 5], ['cannon', 7], ['hammer', 2], ['laser', 6]];
+function trimSession(s) {
+  const e = Object.entries(s); if (e.length <= DATA.afk.sessionCap) return s;
+  const o = {}; for (const [u, v] of e.sort((a, b) => b[1].dmg - a[1].dmg || b[1].spawns - a[1].spawns).slice(0, DATA.afk.sessionCap)) o[u] = v; return o;
+}
+function setAfk(v, why) {
+  v = !!v; if (AFK.on === v) { syncAfkUI(); return; }
+  AFK.on = v; AFK.think = 0.5; AFK.since = gameClock;
+  if (v) {
+    if (G && G.paused) setPaused(false);
+    view.titleT = 0; view.sel = -1;
+    if (G) banner('CROWW IS AFK', 'the bot is defending \u2022 type !bug !troll !spam to attack', '#e0b45c', 3.2, 'crowwLUL');
+  } else if (G) banner('CROWW IS BACK', why || 'you have control again', '#8fca6a', 2.2, 'crowwW');
+  syncAfkUI();
+}
+function syncAfkUI() { const el = document.getElementById('sAfk'); if (el) el.checked = AFK.on; }
+function afkRoundOver() {
+  const chat = G.dmgChat >= G.dmgNpc && G.dmgChat > 0;
+  if (chat) AFK.chatWins++; else AFK.npcWins++;
+  AFK.last = { chat, wave: G.wave, chatDmg: G.dmgChat, npcDmg: G.dmgNpc };
+  banner(chat ? 'CHAT WINS!' : 'THE NPCS WIN', chat ? 'chat broke the bot on wave ' + G.wave : 'the house waves got through on wave ' + G.wave, chat ? '#ffd23f' : '#ff5070', 3, chat ? 'crowwHype' : 'crowwL');
+}
+function afkTick(dt) {
+  if (!AFK.on) return;
+  if (G.phase === 'results') { if (G.time - G.resultsAt >= DATA.afk.restartAfter) { AFK.rounds++; newGame(true); banner('ROUND ' + AFK.rounds, 'the bot rebuilt the desk \u2022 chat: type !bug to attack', '#e0b45c', 2.6); } return; }
+  if (G.phase === 'defeat') return;
+  // watchdog: a wave that somehow never clears gets cleared (never stuck when unattended)
+  if (G.phase === 'wave' && G.waveT > G.waveDur + DATA.afk.watchdog) { G.enemies = []; G.release = []; }
+  AFK.think -= dt; if (AFK.think > 0) return; AFK.think = DATA.afk.think;
+  // Crow Boss when it is useful: a crowd near the perch, or chill getting low with enemies on the field
+  if (crowBossState() === 'ready' && G.phase === 'wave') {
+    const P = DATA.crowBoss.perch, near = G.enemies.filter(e => !e.dead && e.d >= 0 && dist(e.x, e.y, P[0], P[1]) <= DATA.crowBoss.radius).length;
+    if (near >= DATA.afk.crowNear || (G.chill < 55 && G.enemies.length >= 3)) deployCrowBoss();
+  }
+  // build the next planned tower, else the cheapest useful upgrade
+  const next = AFK_PLAN.find(([, pi]) => !G.towers[pi]);
+  const ups = G.towers.map((tw, i) => tw && tw.level < DATA.afk.maxLevel ? { i, c: upCost(tw) } : null).filter(x => x && x.c > 0).sort((a, b) => a.c - b.c);
+  const nCost = next ? DATA.towers[next[0]].cost : Infinity, built = G.towers.filter(Boolean).length;
+  const money = G.gold - DATA.afk.reserve;
+  if (next && (built < 4 || !ups.length || nCost <= ups[0].c * 1.4)) { if (money >= nCost) build(next[1], next[0]); }
+  else if (ups.length && money >= ups[0].c) upgrade(ups[0].i);
+  // build phase: once the bot has spent what it can, start the wave a little early to keep the show moving
+  if (G.phase === 'build' && G.phaseT > DATA.afk.earlyStart && built >= 2 && G.time > 3 && money < Math.min(nCost, ups.length ? ups[0].c : Infinity)) G.phaseT = Math.min(G.phaseT, DATA.afk.earlyStart);
+}
+
 /* ===================================================================== main update */
 function update(dt) {
   if (!G) return;
   gameClock += dt;
+  afkTick(dt);
+  if (!G) return;
   botTick(dt);
   updateCrowBoss(dt);
   const C = G.crow;
@@ -1114,6 +1174,26 @@ function drawPauseBtn(x, y, paused, t) {
   else { rr(x - 10, y - 12, 7, 24, 2); fs(DATA.pal.maroon); rr(x + 3, y - 12, 7, 24, 2); fs(DATA.pal.maroon); }
   ctx.restore();
 }
+function drawAfkBtn(x, y, on, t) {
+  const hov = dist(view.mx, view.my, x, y) < 26;
+  ctx.save(); if (on) { ctx.shadowBlur = 12 + Math.sin(t * 4) * 5; ctx.shadowColor = '#e0b45c'; }
+  circ(x, y, 24); fs(on ? '#e0b45c' : hov ? 'rgba(74,26,26,0.15)' : 'rgba(0,0,0,0)', 4, DATA.pal.maroon); ctx.restore();
+  // little robot head
+  rr(x - 13, y - 9, 26, 20, 6); fs(on ? DATA.pal.maroon : 'rgba(0,0,0,0)', 3, DATA.pal.maroon);
+  circ(x - 5, y + 1, 3); fs(on ? '#ffd23f' : DATA.pal.maroon); circ(x + 5, y + 1, 3); fs(on ? '#ffd23f' : DATA.pal.maroon);
+  ctx.strokeStyle = DATA.pal.maroon; ctx.lineWidth = 3; line(x, y - 9, x, y - 15); circ(x, y - 16, 2.5); fs(DATA.pal.maroon);
+  T('A', x + 17, y + 17, 13, DATA.pal.maroon, 'center', { w: 900, stroke: false });
+}
+function drawAfkBanner(t) {
+  if (!AFK.on || G.phase === 'results') return;
+  const w = 1060, h = 44, x = 940 - w / 2, y = 984, pulse = 0.5 + 0.5 * Math.sin(t * 3);
+  ctx.save(); ctx.shadowBlur = 14 + pulse * 10; ctx.shadowColor = '#e0b45c'; rr(x, y, w, h, 14); ctx.fillStyle = 'rgba(20,8,8,0.93)'; ctx.fill(); ctx.lineWidth = 3; ctx.strokeStyle = '#e0b45c'; ctx.stroke(); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(x, y, w, h); ctx.clip();
+  T('CROWW IS AFK: THE BOT IS DEFENDING', x + 20, y + h / 2 + 1, 24, '#ffd23f', 'left', { w: 900, sw: 5 });
+  T('TYPE !bug TO ATTACK', x + 468, y + h / 2 + 1, 24, '#fef9e5', 'left', { w: 900, sw: 5 });
+  T('ROUND ' + AFK.rounds + '  \u2022  CHAT WINS ' + AFK.chatWins + '  \u2022  NPC WINS ' + AFK.npcWins, x + w - 18, y + h / 2 + 1, 19, '#bfae86', 'right', { w: 800, stroke: false });
+  ctx.restore();
+}
 function drawPaused(rt) {
   ctx.fillStyle = 'rgba(10,5,4,0.72)'; ctx.fillRect(0, 90, 1920, 950);
   const w = 820, h = 420, x = 960 - w / 2, y = 290, pulse = 0.5 + 0.5 * Math.sin(rt * 2.4);
@@ -1143,9 +1223,10 @@ function drawTopBar(t) {
   T('BEST ' + Math.max(bestScore(), G.score), 1350, 62, 20, P.olive, 'left', { w: 500, stroke: false });
   const st = Kick.status, tm = testModeActive();
   const lc = st === 'live' ? '#3fae3a' : st === 'connecting' ? '#e0a020' : st === 'error' ? '#c0302a' : '#9c8a68';
-  ctx.save(); ctx.shadowBlur = st === 'live' ? 14 : 0; ctx.shadowColor = lc; circ(1530, 46, 12 + (st === 'live' ? Math.sin(t * 4) * 1.5 : 0)); fs(lc, 3, P.maroon); ctx.restore();
-  T(fit(st === 'live' ? 'LIVE  #' + settings.channel : st === 'connecting' ? 'CONNECTING\u2026' : 'CHAT OFFLINE', 22, 178, 700), 1552, 32, 22, P.maroon, 'left', { w: 700, stroke: false });
-  T(fit(tm ? 'TEST MODE (BOTS)' : st === 'live' ? Kick.msgs + ' msgs read' : 'press S to connect', 19, 170, 500), 1552, 62, 19, tm ? P.tan : P.olive, 'left', { w: 500, stroke: false });
+  ctx.save(); ctx.shadowBlur = st === 'live' ? 14 : 0; ctx.shadowColor = lc; circ(1552, 46, 11 + (st === 'live' ? Math.sin(t * 4) * 1.5 : 0)); fs(lc, 3, P.maroon); ctx.restore();
+  T(fit(st === 'live' ? 'LIVE  #' + settings.channel : st === 'connecting' ? 'CONNECTING\u2026' : 'CHAT OFFLINE', 22, 162, 700), 1570, 32, 22, P.maroon, 'left', { w: 700, stroke: false });
+  T(fit(tm ? 'TEST MODE (BOTS)' : st === 'live' ? Kick.msgs + ' msgs read' : 'press S to connect', 19, 162, 500), 1570, 62, 19, tm ? P.tan : P.olive, 'left', { w: 500, stroke: false });
+  drawAfkBtn(1500, 46, AFK.on, t);
   drawPauseBtn(1762, 46, G.paused, t);
   drawSpeaker(1822, 46, settings.muted);
   drawGear(1884, 46, 22, t);
@@ -1389,7 +1470,10 @@ function drawResults() {
   G.resultsBtn = { x: bx, y: by, w: bw, h: bh };
   rr(bx, by, bw, bh, 18); fs(hov ? P.forest : P.maroon, 5, P.maroon);
   T('PLAY AGAIN', 960, by + bh / 2 + 2, 42, P.cream, 'center', { w: 700, stroke: false });
-  T('or press Enter', 960, by + bh + 20, 18, P.olive, 'center', { stroke: false });
+  if (AFK.on) {
+    const left = Math.max(0, Math.ceil(DATA.afk.restartAfter - (G.time - G.resultsAt)));
+    T((AFK.last && AFK.last.chat ? 'CHAT WINS THIS ROUND!  ' : 'THE NPCS WIN THIS ROUND  ') + '\u2022  next round in ' + left + 's  \u2022  chat ' + AFK.chatWins + ' : ' + AFK.npcWins + ' bot', 960, by + bh + 22, 22, P.maroon, 'center', { w: 800, stroke: false });
+  } else T('or press Enter', 960, by + bh + 20, 18, P.olive, 'center', { stroke: false });
   ctx.restore();
 }
 function drawBlackout() {
@@ -1466,6 +1550,7 @@ function render(t) {
   drawTopBar(t);
   drawDrain(t);
   drawTicker(t);
+  drawAfkBanner(t);
   drawMenu(t);   // last of the in-game layers: the build ring is never hidden under side panels / banners
   if (G.phase === 'results') drawResults();
   drawTitle(t);
@@ -1484,11 +1569,13 @@ function inRect(p, b) { return b && p.x > b.x && p.x < b.x + b.w && p.y > b.y &&
 cv.addEventListener('mousemove', e => {
   const p = toGame(e); view.mx = p.x; view.my = p.y; if (!G) return;
   const h = hitTest(p.x, p.y); view.hoverPad = h.pad != null ? h.pad : -1;
-  const icon = dist(p.x, p.y, 1884, 46) < 30 || dist(p.x, p.y, 1826, 46) < 26 || dist(p.x, p.y, 1762, 46) < 26;
+  const icon = dist(p.x, p.y, 1884, 46) < 30 || dist(p.x, p.y, 1826, 46) < 26 || dist(p.x, p.y, 1762, 46) < 26 || dist(p.x, p.y, 1500, 46) < 26;
   cv.style.cursor = (h.btn || h.pad != null || icon || (G.phase === 'results' && inRect(p, G.resultsBtn))) ? 'pointer' : 'default';
 });
 cv.addEventListener('mousedown', e => {
   SFX.init(); const p = toGame(e); if (!G) return;
+  if (dist(p.x, p.y, 1500, 46) < 26) { setAfk(!AFK.on, 'AFK off'); return; }
+  if (AFK.on) { setAfk(false, 'welcome back, Croww'); return; }   // any click hands control back
   if (view.titleT > 0) { view.titleT = Math.min(view.titleT, 0.8); return; }
   if (dist(p.x, p.y, 1884, 46) < 30) { toggleSettings(); return; }
   if (dist(p.x, p.y, 1762, 46) < 26) { setPaused(!G.paused); return; }
@@ -1519,7 +1606,9 @@ window.addEventListener('keydown', e => {
   const tag = (document.activeElement && document.activeElement.tagName) || '';
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') { if (e.key === 'Escape') document.activeElement.blur(); return; }
   const k = e.key.toLowerCase();
+  if (AFK.on) { if (!['shift', 'control', 'alt', 'meta'].includes(k)) { e.preventDefault(); setAfk(false, 'welcome back, Croww'); } return; }   // any key hands control back
   if (view.titleT > 0.8) view.titleT = 0.8;
+  if (k === 'a') { setAfk(true); return; }
   if (k === 's') { toggleSettings(); return; }
   if (k === 'm') { settings.muted = !settings.muted; SFX.apply(); saveSettings(); syncSettingsUI(); return; }
   if (!G) return;
@@ -1547,7 +1636,7 @@ function updateStatusUI() {
 }
 function syncSettingsUI() {
   $('sChannel').value = settings.channel; $('sRoom').value = settings.rooms[settings.channel] || '';
-  $('sTest').value = settings.testMode; $('sSmall').value = settings.smallChat; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
+  $('sTest').value = settings.testMode; $('sAfk').checked = AFK.on; $('sSmall').value = settings.smallChat; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
   $('sClean').checked = settings.clean; $('sDiff').value = settings.difficulty; $('sCd').value = settings.userCooldown; $('sCap').value = settings.globalCap;
   $('bCrow').textContent = crowBossUnlocked() ? 'Crow Boss: unlocked (B to deploy)' : 'Unlock Crow Boss now'; $('sVol').value = settings.volume; $('vVol').textContent = settings.volume + '%'; $('sMute').checked = settings.muted; updateStatusUI();
 }
@@ -1559,6 +1648,7 @@ $('bDisconnect').onclick = () => { settings.autoConnect = false; saveSettings();
 $('bLookup').onclick = async () => { readChannel(); delete settings.rooms[settings.channel]; $('sRoom').value = ''; const id = await Kick.lookup(); if (id) Kick.connect(); };
 $('sTest').onchange = () => { settings.testMode = normTestMode($('sTest').value, 'off'); if (!testModeActive()) stopBots(); clearTestParam(); saveSettings(); syncSettingsUI(); };
 $('sSmall').onchange = () => { settings.smallChat = $('sSmall').value; saveSettings(); };
+$('sAfk').onchange = () => setAfk($('sAfk').checked, 'AFK turned off in Settings');
 $('sNpc').onchange = () => { settings.npcWaves = $('sNpc').checked; saveSettings(); };
 $('sBotRate').oninput = () => { settings.botRate = +$('sBotRate').value; $('vBotRate').textContent = settings.botRate + ' msgs/min'; saveSettings(); };
 $('sClean').onchange = () => { settings.clean = $('sClean').checked; saveSettings(); };
@@ -1578,6 +1668,7 @@ function resize() { const s = Math.min(innerWidth / 1920, innerHeight / 1080); $
 window.addEventListener('resize', resize); resize();
 renderBG(); newGame(); syncSettingsUI();
 if (document.fonts) { document.fonts.load('700 40px Oswald'); document.fonts.load('400 20px Oswald'); }
+if (qs.get('afk') === '1' || qs.get('afk') === 'on') setAfk(true);
 if (settings.autoConnect) Kick.connect(); else Kick.set('off', 'auto-connect off - press Connect');
 let last = performance.now(), manual = false, animT = 0;
 function frame(now) {
@@ -1595,7 +1686,7 @@ window.CC = {
   get G() { return G; }, DATA, settings, Kick, feed, onChat, testModeActive, stopBots, build, upgrade, startWave, newGame, toggleSettings,
   spawn(t, u) { spawnEnemy(t, u || 'tester', false); },
   step(sec, dt) { dt = dt || 1 / 30; const n = Math.round(sec / dt); for (let i = 0; i < n; i++) update(dt); },
-  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : animT); }, setPaused, heldChat, activeChatters, goldPerSec, smallChatK, effCooldown, hypeGainMult, spamCount, forceVote() { G.voteClock = 0; }
+  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : animT); }, setPaused, heldChat, AFK, setAfk, activeChatters, goldPerSec, smallChatK, effCooldown, hypeGainMult, spamCount, forceVote() { G.voteClock = 0; }
 };
 </script>
 </body></html>

@@ -49,6 +49,9 @@ const DATA = {
     drain:    { name: 'GOLD DRAIN',   desc: 'Croww loses 3 gold / sec', perSec: 3,  color: '#ffd23f' }
   },
   test: { botRate: 24, botCount: 24 },
+  // AFK / autoplay: the bot defends while Croww is away. think = seconds between decisions (a slower bot is easier
+  // for chat to beat), maxLevel caps upgrades, restartAfter = seconds on the results screen before the next round.
+  afk: { think: 2.0, maxLevel: 2, reserve: 0, restartAfter: 12, earlyStart: 5, crowNear: 5, sessionCap: 200, watchdog: 240 },
   // desk mascot image (approved art) placement on the right panel
   deskArt: { x: 1485, y: 596, size: 450, face: [0.64, 0.33], screen: [0.1, 0.3, 0.26, 0.23] },
   // CROW BOSS: the old code-drawn smoking crow, an ally the streamer deploys (key B / the button under the chill meter)
