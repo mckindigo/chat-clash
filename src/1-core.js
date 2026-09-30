@@ -21,7 +21,7 @@ const DATA = {
     smallChatFull: 8, smallTrickleBonus: 0.1, smallKillBonus: 0.35, activeWindow: 120 },
   // small-chat scaling of chat power (k = small-chat boost 0..1, same k as the gold boost)
   smallChat: { cooldown: 7, cooldownCurve: 1.6, hpBoost: { bug: 0.4, troll: 0.6, lag: 0.4, spam: 0.3 }, spamExtra: 3, hypeGain: 4, hypeDecayCut: 0.7 },
-  chill: { max: 100, regenOnClear: 6 },
+  chill: { max: 100, regenOnClear: 10 },
   wave: { firstBuild: 15, build: 12, baseDuration: 20, perWave: 2, maxDuration: 45, hpScale: 0.13, speedScale: 0.012 },
   difficulty: {
     easy:   { hp: 0.75, ai: 0.7,  gold: 1.25 },
@@ -30,21 +30,22 @@ const DATA = {
   },
   // house NPC budget = budgetBase + budgetPerWave*(w-1) + budgetLate*(w-lateFrom)^2 once w > lateFrom (late waves ramp harder);
   // every enemy's HP also compounds by (1+lateHp) per wave past lateFrom. chatDiscount: how much of a chat spawn's cost comes out of the NPC budget.
-  ai: { name: 'NPC', budgetBase: 10, budgetPerWave: 7, budgetLate: 2, lateFrom: 4, lateHp: 0.25, chatDiscount: 0.5, minGap: 0.45, maxGap: 2.2, unlock: { troll: 2, spam: 2, lag: 3 } },
+  ai: { name: 'NPC', budgetBase: 10, budgetPerWave: 7, budgetLate: 2, lateFrom: 4, lateHp: 0.22, lateHpCap: 20, chatDiscount: 0.5, minGap: 0.45, maxGap: 2.2, unlock: { troll: 2, spam: 2, lag: 3 } },
   // hype: only ACCEPTED commands add hype (a rejected one - cooldown / room full / locked - adds nothing). A bigger chat needs
   // more hype: gain is divided by 1 + hypePerChatter * (active chatters beyond hypeFreeChatters). A chat !boss only unlocks
   // during a wave from bossMinWave on, one chat boss alive at a time, and it takes a minion slot like everything else.
-  chat: { userCooldown: 20, globalCap: 30, queueStagger: 0.45, hypePerMsg: 1.2, hypePerCmd: 2.5, hypeMax: 100, hypeDecay: 0.35, feedLines: 7, hypeFreeChatters: 3, hypePerChatter: 0.1, bossMinWave: 3, bossHpPerChatter: 0.05 },
+  chat: { userCooldown: 20, globalCap: 30, queueStagger: 0.45, hypePerMsg: 1.2, hypePerCmd: 2.5, hypeMax: 100, hypeDecay: 0.35, feedLines: 7, hypeFreeChatters: 3, hypePerChatter: 0.1, bossMinWave: 3, bossHpPerChatter: 0.015, bossKillChill: 10,
+    earlyChatHp: [0.75, 0.85] },   // chat enemies on waves 1 and 2 are softer (a big chat can't flatten 3 fresh towers)
   enemies: {
     bug:   { label: 'BUG',   desc: 'weak & fast',          hp: 30,   speed: 125, gold: 6,   dmg: 5,  r: 17, cost: 1 },
-    troll: { label: 'TROLL', desc: 'tanky',                hp: 240,  speed: 52,  gold: 18,  dmg: 14, r: 30, cost: 4 },
+    troll: { label: 'TROLL', desc: 'tanky',                hp: 240,  speed: 52,  gold: 18,  dmg: 12, r: 30, cost: 4 },
     lag:   { label: 'LAG',   desc: 'speeds up nearby',     hp: 95,   speed: 68,  gold: 12,  dmg: 8,  r: 22, cost: 3, aura: 150, auraBuff: 1.35 },
     spam:  { label: 'SPAM',  desc: 'swarm of 5 tiny',      hp: 13,   speed: 112, gold: 2,   dmg: 2,  r: 11, cost: 2, count: 5 },
-    boss:  { label: 'BOSS',  desc: 'unlocks at full HYPE', hp: 1700, speed: 40,  gold: 150, dmg: 35, r: 56, cost: 0 }
+    boss:  { label: 'BOSS',  desc: 'unlocks at full HYPE', hp: 1300, speed: 36,  gold: 150, dmg: 25, r: 56, cost: 0 }
   },
   towers: {
     hammer: { name: 'Mod Hammer',   key: '1', desc: 'Melee slam, splash damage',    cost: 100, range: 150, dmg: 34, rate: 1.1, splash: 95, color: '#ffb03a' },
-    laser:  { name: 'Ban Laser',    key: '2', desc: 'Single-target beam, high DPS', cost: 135, range: 270, dps: 50, color: '#ff3b5c' },
+    laser:  { name: 'Ban Laser',    key: '2', desc: 'Single-target beam, high DPS', cost: 135, range: 270, dps: 70, color: '#ff3b5c' },
     slow:   { name: 'Slow Mode',    key: '3', desc: 'Pulse slows everyone nearby',  cost: 120, range: 210, slow: 0.5, dur: 1.6, rate: 1.0, dmg: 8, color: '#5ab8ff' },
     cannon: { name: 'Emote Cannon', key: '4', desc: 'Lobbed emotes, big AoE',       cost: 185, range: 290, dmg: 70, rate: 1.7, splash: 120, projSpeed: 1.1, color: '#ffd23f' }
   },
@@ -60,11 +61,11 @@ const DATA = {
   test: { botRate: 24, botCount: 24 },
   // AFK / autoplay: the bot defends while Croww is away. think = seconds between decisions (a slower bot is easier
   // for chat to beat), maxLevel caps upgrades, restartAfter = seconds on the results screen before the next round.
-  afk: { think: 2.0, maxLevel: 3, reserve: 0, restartAfter: 12, earlyStart: 5, crowNear: 5, sessionCap: 200, watchdog: 240 },
+  afk: { think: 2.0, maxLevel: 2, reserve: 0, restartAfter: 12, earlyStart: 5, crowNear: 5, sessionCap: 200, watchdog: 240 },
   // desk mascot image (approved art) placement on the right panel
   deskArt: { x: 1485, y: 596, size: 450, face: [0.64, 0.33], screen: [0.1, 0.3, 0.26, 0.23] },
   // CROW BOSS: the old code-drawn smoking crow, an ally the streamer deploys (key B / the button under the chill meter)
-  crowBoss: { unlockWave: 5, cooldown: 90, duration: 12, puffEvery: 1.4, radius: 270, dmg: 45, dmgPerWave: 0.12, slow: 0.5, slowDur: 2.5, chillOnDeploy: 8, perch: [690, 720], scale: 0.62 },
+  crowBoss: { unlockWave: 5, cooldown: 90, duration: 12, puffEvery: 1.4, radius: 270, dmg: 45, dmgPerWave: 0.12, slow: 0.5, slowDur: 2.5, chillOnDeploy: 8, perch: [1070, 770], scale: 0.5, bossMult: 2.5 },
   kick: { pusherKey: '32cbd69e4b950bf97679', cluster: 'us2', version: '8.4.0-rc2', knownRooms: { croww: '962037' }, pingEvery: 60 },
   fx: { shakePerDmg: 0.9, maxShake: 26 },
   ticker: 'HOW TO PLAY:  type  !bug  !troll  !lag  !spam  in chat to send attackers at Croww\'s desk   \u2022   fill the HYPE meter with chat to unlock  !boss   \u2022   every minute chat votes a hazard with  !1  !2  !3   \u2022   your name rides above your minion - hit the desk to top the TOP ATTACKERS board   \u2022   cooldown per chatter: {CD}s   \u2022   '

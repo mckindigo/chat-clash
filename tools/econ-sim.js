@@ -22,13 +22,14 @@ const srv = http.createServer((q, r) => { fs.readFile(path.join(root, 'index.htm
     const CMDS = ['!bug', '!troll', '!spam', '!lag'];
     const q = (a, p) => { const s = a.slice().sort((x, y) => x - y); return s.length ? Math.round(s[Math.min(s.length - 1, Math.floor(p * s.length))]) : null; };
     let curR = null; const oS = spawnEnemy; window.spawnEnemy = function (type, user, isBot) { if (type === 'boss' && !isBot && curR) { curR.bosses++; if (curR.firstBoss == null) curR.firstBoss = CC.G.wave; } return oS.apply(this, arguments); };
+    const oH = deskHit; window.deskHit = function (e) { if (e.type === 'boss' && !e.isBot && curR && !e.dead) curR.bossHits++; return oH.apply(this, arguments); };
     for (const sc of [0, 1, 3, 15, '20 spam']) {
       const spam = sc === '20 spam', n = spam ? 20 : sc, runs = [];
       for (let s = 1; s <= SEEDS; s++) {
         seed = s * 7919 + n + (spam ? 5 : 0); CC.settings.smallChat = 'auto'; CC.settings.testMode = 'off'; CC.newGame();
         if (typeof lastSeen !== 'undefined') for (const k in lastSeen) delete lastSeen[k];
         const users = Array.from({ length: n }, (_, i) => ({ u: 'viewer' + i, next: spam ? rnd() * 2 : 1 + rnd() * 8, voted: null }));
-        const r = curR = { banks: [], w5: null, t4: null, gps: 0, lost: null, wb: {}, minChill: 100, chillW: {}, bosses: 0, firstBoss: null };
+        const r = curR = { banks: [], w5: null, t4: null, gps: 0, lost: null, wb: {}, minChill: 100, chillW: {}, bosses: 0, bossHits: 0, firstBoss: null };
         let built = 0, ups = 0, t = 0, shop = 8; const dt = 1 / 20;
         while (CC.G.wave <= LASTW && t < 3600) {
           const G = CC.G;
@@ -65,7 +66,7 @@ const srv = http.createServer((q, r) => { fs.readFile(path.join(root, 'index.htm
       const perW = f => Array.from({ length: LASTW }, (_, i) => { const v = runs.map(r => f(r, i + 1)).filter(x => x != null); return v.length ? Math.round(v.reduce((a, b) => a + b, 0) / v.length) : '-'; }).join(' ');
       out.push({ chatters: sc, 'g/s': +(+runs[0].gps).toFixed(2), 'w5 end @s': avg(r => r.w5 && r.w5.t), 'towers @w5': avg(r => r.w5 && r.w5.towers), 'ups @w5': avg(r => r.w5 && r.w5.ups),
         'bank median': q(all, 0.5), 'bank p90': q(all, 0.9), 'bank max': q(all, 1), 'bank after wave 1..': perW((r, w) => r.wb[w]), 'min chill per wave 1..': perW((r, w) => r.chillW[w]),
-        'bosses/run': avg(r => r.bosses), 'first boss wave': avg(r => r.firstBoss), ['lost before w' + (LASTW + 1)]: runs.filter(r => r.lost).length + '/' + SEEDS + (runs.some(r => r.lost) ? ' (w' + runs.filter(r => r.lost).map(r => r.lost).join(',') + ')' : '') });
+        'bosses/run': avg(r => r.bosses), 'boss kill %': (() => { const b = runs.reduce((a, r) => a + r.bosses, 0), h = runs.reduce((a, r) => a + r.bossHits, 0); return b ? Math.round(100 * (1 - h / b)) : '-'; })(), 'first boss wave': avg(r => r.firstBoss), ['lost before w' + (LASTW + 1)]: runs.filter(r => r.lost).length + '/' + SEEDS + (runs.some(r => r.lost) ? ' (w' + runs.filter(r => r.lost).map(r => r.lost).join(',') + ')' : '') });
     }
     return out;
   }, SEEDS, LASTW, process.env.OVR || '');

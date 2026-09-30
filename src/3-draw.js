@@ -93,13 +93,15 @@ function drawEnemies(t) {
   const list = G.enemies.filter(e => e.d > -40).sort((a, b) => a.y - b.y);
   for (const e of list) { ell(e.x, e.y + e.r * 0.85, e.r * 0.9, e.r * 0.3); fs('rgba(0,0,0,0.35)'); drawEnemyShape(e.type, e.x, e.y, e.r, t + e.wob, e.ang, e.flash, e.slowT > 0); }
   // name tags: bosses always; otherwise only the 8 chat leads furthest along, fading in after they leave the spawn
+  const placed = [];   // name-tag rects already drawn this frame: overlapping tags get nudged up
+  const nudge = (x, y, w, h) => { for (let k = 0; k < 4; k++) { if (!placed.some(r => Math.abs(r.x - x) < (r.w + w) / 2 && Math.abs(r.y - y) < (r.h + h) / 2)) break; y -= h + 2; } placed.push({ x, y, w, h }); return y; };
   const tagged = new Set(G.enemies.filter(e => e.lead && !e.isBot && e.type !== 'boss' && e.d > 0).sort((a, b) => b.d - a.d).slice(0, 8));
   for (const e of list) {
     if (e.hp < e.maxHp) { const w = Math.max(34, e.r * 2), y = e.y - e.r - (e.type === 'troll' ? 44 : e.type === 'boss' ? 70 : 14); rr(e.x - w / 2 - 2, y - 2, w + 4, 10, 4); fs(O); rr(e.x - w / 2, y, Math.max(1, w * clamp(e.hp / e.maxHp, 0, 1)), 6, 3); fs(e.hp / e.maxHp > 0.5 ? '#8fca6a' : e.hp / e.maxHp > 0.25 ? '#ffd23f' : '#ff5070'); }
     if (e.lead) {
       const y = Math.max(122, e.y - e.r - (e.type === 'troll' ? 62 : e.type === 'boss' ? 92 : 32));   // never up in the top bar
       if (e.isBot) { if (e.d > 0 && e.d < 400) T('npc', e.x, y, 16, '#9c8a68', 'center', { sw: 4 }); }
-      else if (e.type === 'boss' || tagged.has(e)) { ctx.save(); ctx.globalAlpha = e.type === 'boss' ? 1 : clamp((e.d - 20) / 90, 0, 1); const sz = e.type === 'boss' ? 30 : 22, s = fit(e.user, sz, 220) + (e.n > 1 ? ' x' + e.n : ''); ctx.font = `700 ${sz}px ${F}`; const lx = Math.max(e.x, 382 + ctx.measureText(s).width / 2); T(s, lx, y, sz, userColor(e.user), 'center', { sw: 6, w: 700 }); ctx.restore(); }
+      else if (e.type === 'boss' || tagged.has(e)) { ctx.save(); ctx.globalAlpha = e.type === 'boss' ? 1 : clamp((e.d - 20) / 90, 0, 1); const sz = e.type === 'boss' ? 30 : 22, s = fit(e.user, sz, 220) + (e.n > 1 ? ' x' + e.n : ''); ctx.font = `700 ${sz}px ${F}`; const tw = ctx.measureText(s).width, lx = Math.max(e.x, 382 + tw / 2), ly = Math.max(122, nudge(lx, y, tw, sz)); T(s, lx, ly, sz, userColor(e.user), 'center', { sw: 6, w: 700 }); ctx.restore(); }
     }
   }
 }
@@ -263,7 +265,7 @@ function drawCrowBoss(t) {
   CROW_SPRITE.body(t, { eyes: 'chill', beak: pose.k > 0.8 ? 0.5 : 0, bob: Math.sin(t * 3) * 3, legs: true });
   CROW_SPRITE.arm(pose, t);
   ctx.restore();
-  T('CROW BOSS  ' + Math.ceil(cb.t) + 's', p.x, p.y + 162 * p.s / D.scale, 26, '#9fd07a', 'center', { w: 900, sw: 6 });
+  T('CROW BOSS  ' + Math.ceil(cb.t) + 's', p.x, p.y + 156 * p.s / 0.5, 20, '#9fd07a', 'center', { w: 900, sw: 6 });
 }
 function drawCrowBossButton(t) {
   const st = crowBossState(), cb = G.crowBoss, D = DATA.crowBoss, x = 1535, y = 362, w = 350, h = 62;

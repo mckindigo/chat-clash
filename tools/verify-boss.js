@@ -56,6 +56,19 @@ const FAKE_WS = () => {
   const r5 = await page.evaluate(() => { const G = CC.G; G.enemies = []; G.bossReady = false; G.hype = 100; CC.step(0.1); for (let i = 0; i < 30; i++) spawnEnemy('bug', 'cap' + i, false, 'kick');
     kickSay('late_boss', '!boss'); const f = CC.feed[CC.feed.length - 1].text; const r = { load: chatLoad(), cap: CC.settings.globalCap, boss: G.enemies.some(e => e.type === 'boss'), f }; G.enemies = []; return r; });
   ok(!r5.boss && r5.load <= r5.cap && /room is full/.test(r5.f), '!boss with the room full is refused: ' + r5.load + '/' + r5.cap + ' (' + r5.f + ')');
+  // 5b. QA repro: 1 chatter types !spam in build (small chat = 8 minions), then 30 type !bug, then the wave starts
+  const r5b = await page.evaluate(() => { CC.newGame(); const G = CC.G; for (const k in lastSeen) delete lastSeen[k]; kickSay('solo', '!spam'); const q0 = chatLoad();
+    for (let i = 0; i < 30; i++) kickSay('bugger' + i, '!bug'); CC.startWave(); let mx = chatLoad(); for (let i = 0; i < 200; i++) { CC.step(0.05, 0.05); mx = Math.max(mx, G.enemies.filter(e => !e.isBot && !e.dead).length + G.release.length); }
+    return { spamQueued: q0, maxLoad: mx, cap: CC.settings.globalCap }; });
+  ok(r5b.spamQueued >= 8 && r5b.maxLoad <= r5b.cap, 'queued small-chat !spam counts its real size (' + r5b.spamQueued + '); peak ' + r5b.maxLoad + '/' + r5b.cap);
+  // 5c. boss kill gives chill back; Crow Boss hits bosses harder
+  const r5c = await page.evaluate(() => { const G = CC.G; G.wave = 4; G.enemies = []; if (G.phase !== 'wave') CC.startWave(); spawnEnemy('boss', 'bossman', false, 'kick'); const b = G.enemies[G.enemies.length - 1]; b.d = 400;
+    G.chill = 50; dmgEnemy(b, 1e9, 'laser'); const chill = G.chill; spawnEnemy('boss', 'bossman2', false, 'kick'); spawnEnemy('troll', 'tr', false, 'kick'); const b2 = G.enemies[G.enemies.length - 2], t2 = G.enemies[G.enemies.length - 1];
+    b2.hp = b2.maxHp = t2.hp = t2.maxHp = 1e6; const P = CC.DATA.crowBoss.perch; b2.d = t2.d = 1; b2.x = t2.x = P[0]; b2.y = t2.y = P[1]; const o = window.pathAt; window.pathAt = d => ({ x: P[0], y: P[1], ang: 0 });
+    localStorage.setItem('chatclash.crowBoss', '1'); G.crowBoss.cd = 0; CC.deployCrowBoss(); for (let i = 0; i < 60; i++) CC.step(0.05, 0.05); window.pathAt = o;
+    const r = { chillAfterKill: chill, bossDmg: Math.round(1e6 - b2.hp), trollDmg: Math.round(1e6 - t2.hp) }; G.enemies = []; return r; });
+  ok(r5c.chillAfterKill === 50 + 10, 'killing a chat boss gives +10 chill (50 -> ' + r5c.chillAfterKill + ')');
+  ok(r5c.bossDmg >= r5c.trollDmg * 2.4 && r5c.trollDmg > 0, 'Crow Boss smoke hits a boss ' + (r5c.bossDmg / Math.max(1, r5c.trollDmg)).toFixed(1) + 'x harder than a troll ' + JSON.stringify(r5c));
   // 6. fast chat through Kick: 20 chatters spamming for 90s; minion count never above the cap; UI checks
   const r6 = await page.evaluate(() => { const G = CC.G; CC.newGame(); G.gold = 5000; [[1, 'laser'], [3, 'hammer'], [4, 'slow'], [5, 'cannon']].forEach(([i, t]) => build(i, t)); G.wave = 4;
     const users = Array.from({ length: 20 }, (_, i) => ({ u: ['viewer', 'raider', 'chatgoblin', 'krow_fan', 'kickmod'][i % 5] + i, next: Math.random() * 3 })); let t = 0, maxLoad = 0, maxShown = 0;
@@ -73,10 +86,13 @@ const FAKE_WS = () => {
   ok(r7.tags <= 8, '20 chat bugs bunched at the spawn: ' + r7.tags + ' name tags drawn (max 8, faded in)');
   await page.evaluate(() => CC.render(6)); await page.screenshot({ path: out + '/fast-chat-20-1920x1080.png' });
   // 7. Crow Boss clear of every pad and the banner zone
-  const r8 = await page.evaluate(() => { const P = CC.DATA.crowBoss.perch, box = { x0: P[0] - 85, x1: P[0] + 85, y0: P[1] - 105, y1: P[1] + 175 };
+  const r8 = await page.evaluate(() => { const P = CC.DATA.crowBoss.perch, kk = CC.DATA.crowBoss.scale / 0.62, box = { x0: P[0] - 85 * kk, x1: P[0] + 85 * kk, y0: P[1] - 105 * kk, y1: P[1] + 175 * kk };
     const hitPads = CC.DATA.pads.map((p, i) => [i, p]).filter(([, [x, y]]) => x + 45 > box.x0 && x - 45 < box.x1 && y + 50 > box.y0 && y - 45 < box.y1).map(([i]) => i);
     const bannerZone = { x0: 540, x1: 1340, y0: 330, y1: 600 }, inBanner = box.x1 > bannerZone.x0 && box.x0 < bannerZone.x1 && box.y1 > bannerZone.y0 && box.y0 < bannerZone.y1;
-    return { perch: P, hitPads, inBanner }; });
+    const k = CC.DATA.crowBoss.scale / 0.62, bx = { x0: P[0] - 85 * k, x1: P[0] + 85 * k, y0: P[1] - 105 * k, y1: P[1] + 175 * k }; let pathGap = 1e9;
+    for (let d = 0; d < PATH.len; d += 5) { const q = pathAt(d); const dx = Math.max(bx.x0 - q.x, 0, q.x - bx.x1), dy = Math.max(bx.y0 - q.y, 0, q.y - bx.y1); pathGap = Math.min(pathGap, Math.hypot(dx, dy)); }
+    return { perch: P, hitPads, inBanner, pathGap: Math.round(pathGap) }; });
+  ok(r8.pathGap >= 40, 'Crow Boss sprite stays ' + r8.pathGap + 'px off the path centre line (enemies never walk behind him)');
   ok(!r8.hitPads.length && !r8.inBanner, 'Crow Boss perch ' + JSON.stringify(r8.perch) + ' overlaps no pad and no banner ' + JSON.stringify(r8));
   await page.evaluate(() => { localStorage.setItem('chatclash.crowBoss', '1'); const G = CC.G; G.enemies = []; G.gold = 5000; for (let i = 0; i < 8; i++) if (!G.towers[i]) build(i, ['hammer', 'laser', 'slow', 'hammer', 'cannon', 'laser', 'slow', 'cannon'][i]);
     G.crowBoss.cd = 0; if (G.phase !== 'wave') CC.startWave(); CC.deployCrowBoss(); CC.step(1.2, 1.2); startVote(); G.vote.opts[0] = 'fog'; G.vote.counts = [3, 0, 0]; endVote(); CC.step(0.4, 0.4); CC.render(8); });

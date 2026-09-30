@@ -389,7 +389,9 @@ function render(t) {
   drawChillMeter(t);
   drawDesk(t);
   drawBlackout();
-  for (const tx of G.texts) { const k = tx.t / tx.dur, sc = tx.pop ? (k < 0.15 ? 0.5 + ease(k / 0.15) * 0.7 : 1.2 - Math.min(0.2, k - 0.15)) : 1; ctx.save(); ctx.globalAlpha = k > 0.7 ? (1 - k) / 0.3 : 1; ctx.translate(tx.x, tx.y); ctx.scale(sc, sc); T(tx.s, 0, 0, tx.size, tx.c, 'center', { w: 900, sw: Math.max(4, tx.size * 0.18) }); ctx.restore(); }
+  // damage numbers that overlap get nudged apart (up) before drawing
+  { const dn = G.texts.filter(x => x.dmg).sort((a, b) => b.y - a.y), pl = []; for (const x of dn) { let y = x.y; for (let k = 0; k < 4 && pl.some(p => Math.abs(p.x - x.x) < 26 && Math.abs(p.y - y) < 20); k++) y -= 20; x.dy = y - x.y; pl.push({ x: x.x, y }); } }
+  for (const tx of G.texts) { const k = tx.t / tx.dur, sc = tx.pop ? (k < 0.15 ? 0.5 + ease(k / 0.15) * 0.7 : 1.2 - Math.min(0.2, k - 0.15)) : 1; ctx.save(); ctx.globalAlpha = k > 0.7 ? (1 - k) / 0.3 : 1; ctx.translate(tx.x, tx.y + (tx.dy || 0)); ctx.scale(sc, sc); T(tx.s, 0, 0, tx.size, tx.c, 'center', { w: 900, sw: Math.max(4, tx.size * 0.18) }); ctx.restore(); }
   for (const p of G.pops) { const k = p.t / p.dur, s = k < 0.15 ? ease(k / 0.15) * 1.2 : 1.2 - (k - 0.15) * 0.3; drawEmoteImg(p.name, p.x - 60 * s, p.y - 60 * s - k * 90, 120 * s, p.rot + Math.sin(p.t * 12) * 0.1, k > 0.7 ? (1 - k) / 0.3 : 1); }
   ctx.restore();
   if (G.redFlash > 0) { const g = ctx.createRadialGradient(960, 540, 400, 960, 540, 1100); g.addColorStop(0, 'rgba(255,40,70,0)'); g.addColorStop(1, `rgba(255,40,70,${G.redFlash * 0.45})`); ctx.fillStyle = g; ctx.fillRect(0, 0, 1920, 1080); }

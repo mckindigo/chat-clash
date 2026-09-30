@@ -24,11 +24,12 @@ function diff() { return DATA.difficulty[settings.difficulty] || DATA.difficulty
 function banner(title, sub, color, dur, emote) { G.banners.push({ title, sub, color: color || '#fff', t: 0, dur: dur || 2.4, emote }); if (G.banners.length > 2) G.banners.shift(); }
 function addFeed(user, text, kind) { feed.push({ user, text, kind: kind || 'msg', t: performance.now() }); if (feed.length > 40) feed.shift(); }
 function stat(tab, u) { return tab[u] || (tab[u] = { dmg: 0, spawns: 0 }); }
-function chatLoad() { return G.enemies.filter(e => !e.isBot && !e.dead).length + [...G.release, ...G.chatQueue].reduce((a, q) => a + (DATA.enemies[q.type].count || 1), 0); }
+function unitCount(type, boost) { return type === 'spam' ? spamCount(boost || 0) : (DATA.enemies[type].count || 1); }   // the REAL number of minions a command spawns
+function chatLoad() { return G.enemies.filter(e => !e.isBot && !e.dead).length + [...G.release, ...G.chatQueue].reduce((a, q) => a + unitCount(q.type, q.boost), 0); }
 
 /* ===================================================================== waves */
 function npcBudget(w) { const A = DATA.ai, l = Math.max(0, w - A.lateFrom); return A.budgetBase + A.budgetPerWave * (w - 1) + A.budgetLate * l * l; }
-function lateHpMult(w) { return Math.pow(1 + DATA.ai.lateHp, Math.max(0, w - DATA.ai.lateFrom)); }
+function lateHpMult(w) { return Math.min(DATA.ai.lateHpCap, Math.pow(1 + DATA.ai.lateHp, Math.max(0, w - DATA.ai.lateFrom))); }
 function waveDuration(w) { return Math.min(DATA.wave.maxDuration, DATA.wave.baseDuration + DATA.wave.perWave * (w - 1)); }
 function startWave() {
   if (G.phase !== 'build') return;
@@ -67,7 +68,8 @@ function defeat() {
 function spawnEnemy(type, user, isBot, src, boost) {
   boost = boost || 0;   // small-chat boost for chat commands: tougher enemies, more !spam minions
   const D = DATA.enemies[type], n = type === 'spam' ? spamCount(boost) : (D.count || 1);
-  const late = lateHpMult(G.wave) * (type === 'boss' && !isBot ? 1 + DATA.chat.bossHpPerChatter * Math.max(0, activeChatters() - DATA.chat.hypeFreeChatters) : 1);   // compounding late-wave toughness; a big chat's boss is beefier
+  const early = !isBot && G.wave <= DATA.chat.earlyChatHp.length && type !== 'boss' ? DATA.chat.earlyChatHp[G.wave - 1] : 1;
+  const late = early * lateHpMult(G.wave) * (type === 'boss' && !isBot ? 1 + DATA.chat.bossHpPerChatter * Math.max(0, activeChatters() - DATA.chat.hypeFreeChatters) : 1);   // compounding late-wave toughness; a big chat's boss is beefier
   const hpM = (1 + DATA.wave.hpScale * (G.wave - 1)) * late * diff().hp * (1 + (DATA.smallChat.hpBoost[type] || 0) * boost), spM = 1 + DATA.wave.speedScale * (G.wave - 1);
   for (let i = 0; i < n; i++) {
     G.enemies.push({ id: ++G.eid, type, user, isBot, boosted: boost > 0.05, src: src || (isBot ? 'npc' : 'chat'), lead: i === 0, n, hp: D.hp * hpM, maxHp: D.hp * hpM, speed: D.speed * spM * rand(0.95, 1.05), d: -i * 26 - 10, x: -99, y: -99, ang: 0, r: D.r,
@@ -79,7 +81,7 @@ function spawnEnemy(type, user, isBot, src, boost) {
 function dmgEnemy(e, amt, src) {
   if (e.dead) return;
   e.hp -= amt; e.flash = 0.12; e.dmgAcc += amt;
-  if (e.dmgAcc >= 8 || src !== 'laser') { if (e.dmgAcc >= 1) G.texts.push({ x: e.x + rand(-10, 10), y: e.y - e.r - 6, s: Math.round(e.dmgAcc) + '', c: '#fff6c8', t: 0, dur: 0.6, size: 22, vy: -70 }); e.dmgAcc = 0; }
+  if (e.dmgAcc >= 8 || src !== 'laser') { if (e.dmgAcc >= 1) G.texts.push({ x: e.x + rand(-10, 10), y: e.y - e.r - 6, s: Math.round(e.dmgAcc) + '', c: '#fff6c8', t: 0, dur: 0.6, size: 22, vy: -70, dmg: true }); e.dmgAcc = 0; }
   if (src !== 'laser') SFX.play('hit');
   if (e.hp <= 0) {
     e.dead = true; G.kills++;
@@ -91,7 +93,8 @@ function dmgEnemy(e, amt, src) {
     G.rings.push({ x: e.x, y: e.y, r: e.r, r2: e.r * 2.6, t: 0, dur: 0.35, c: col, w: 6 });
     const word = { laser: 'BANNED!', hammer: 'BONK!', cannon: 'POG!', slow: 'ZZZ' }[src];
     if (word && (e.type === 'troll' || e.type === 'boss' || Math.random() < 0.3)) G.texts.push({ x: e.x, y: e.y - 40, s: word, c: DATA.towers[src].color, t: 0, dur: 1, size: e.type === 'boss' ? 64 : 34, vy: -40, pop: true });
-    if (e.type === 'boss') { G.shake = DATA.fx.maxShake; SFX.play('boom'); banner('BOSS DOWN!', 'Croww didn\'t even look up', '#ffd23f', 2.4); } else SFX.play('pop');
+    if (e.type === 'boss') { G.shake = DATA.fx.maxShake; SFX.play('boom'); const bc = e.isBot ? 0 : DATA.chat.bossKillChill; if (bc) { G.chill = Math.min(DATA.chill.max, G.chill + bc); G.texts.push({ x: 1600, y: 640, s: '+' + bc + ' CHILL', c: '#8fca6a', t: 0, dur: 1.4, size: 36, vy: -50, pop: true }); }
+      banner('BOSS DOWN!', bc ? 'Croww didn\'t even look up  \u2022  +' + bc + ' chill' : 'Croww didn\'t even look up', '#ffd23f', 2.4); } else SFX.play('pop');
   }
 }
 function deskHit(e) {
@@ -116,7 +119,7 @@ function tryCommand(user, type, src) {
   const cd = cooldowns[key] || 0;
   if (now < cd) { addFeed(user, '!' + type + '  (cooldown ' + Math.ceil(cd - now) + 's)', 'cd'); return false; }
   if (type === 'boss' && !G.bossReady) { addFeed(user, '!boss  (' + bossLockReason() + ')', 'lock'); return false; }
-  const n = DATA.enemies[type].count || 1;
+  const n = unitCount(type, type === 'boss' ? 0 : smallChatK());
   if (chatLoad() + n > settings.globalCap) { addFeed(user, '!' + type + '  (room is full!)', 'cap'); return false; }
   cooldowns[key] = now + effCooldown();
   if (type === 'boss') { G.bossReady = false; G.hype = 0; }
@@ -271,7 +274,7 @@ function updateCrowBoss(dt) {
   if (cb.puffT <= 0 && cb.t > 0.7) {
     cb.puffT = D.puffEvery; cb.puffs++;
     const p = crowBossPos(), dmg = D.dmg * (1 + D.dmgPerWave * (G.wave - 1));
-    for (const e of G.enemies) if (!e.dead && e.d >= 0 && dist(e.x, e.y, p.x, p.y) <= D.radius) { e.slowT = Math.max(e.slowT, D.slowDur); e.slowAmt = Math.max(e.slowAmt, D.slow); dmgEnemy(e, dmg, 'crow'); }
+    for (const e of G.enemies) if (!e.dead && e.d >= 0 && dist(e.x, e.y, p.x, p.y) <= D.radius) { e.slowT = Math.max(e.slowT, D.slowDur); e.slowAmt = Math.max(e.slowAmt, D.slow); dmgEnemy(e, e.type === 'boss' ? dmg * D.bossMult : dmg, 'crow'); }
     const col = settings.clean ? '#f4fbff' : '#d8cfe8';
     G.rings.push({ x: p.x, y: p.y, r: 30, r2: D.radius, t: 0, dur: 0.7, c: col, w: 14 });
     G.rings.push({ x: p.x, y: p.y, r: 10, r2: D.radius * 0.6, t: 0, dur: 0.5, c: '#9fd07a', w: 6 });
@@ -502,7 +505,8 @@ function afkTick(dt) {
   // Crow Boss when it is useful: a crowd near the perch, or chill getting low with enemies on the field
   if (crowBossState() === 'ready' && G.phase === 'wave') {
     const P = DATA.crowBoss.perch, near = G.enemies.filter(e => !e.dead && e.d >= 0 && dist(e.x, e.y, P[0], P[1]) <= DATA.crowBoss.radius).length;
-    if (near >= DATA.afk.crowNear || (G.chill < 55 && G.enemies.length >= 3)) deployCrowBoss();
+    const bossNear = G.enemies.some(e => e.type === 'boss' && !e.dead && e.d >= 0 && dist(e.x, e.y, P[0], P[1]) <= DATA.crowBoss.radius * 0.9);   // the Crow Boss is the boss counter
+    if (bossNear || near >= DATA.afk.crowNear || (G.chill < 55 && G.enemies.length >= 3)) deployCrowBoss();
   }
   // build the next planned tower, else the cheapest useful upgrade
   const next = AFK_PLAN.find(([, pi]) => !G.towers[pi]);
