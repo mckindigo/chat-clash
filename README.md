@@ -19,6 +19,19 @@ Croww is the defender at his gaming desk (with his crow on his shoulder), and **
 - **Small chat mode** (Settings > Game, Auto by default): with fewer than 8 active chatters (people who chatted in the last 2 min) the small gold trickle rises from 0.4/s to 0.5/s at 0 chatters, and kill gold gets up to +35% (earned gold, not free gold). The same boost also scales chat power, fading out by 8 chatters: per-chatter cooldown drops to **7s** (at 0-3 chatters), `!spam` sends up to 8 minions, chat enemies get tougher (troll up to +60% HP, others +30-40%), and hype fills up to 5x faster and decays 70% slower so `!boss` is reachable with 1-3 chatters. A **SMALL CHAT BOOST %** badge shows on the HUD while it is active. *Always on* = full boost, *Off* = the original values. Votes: one vote decides; with no votes a random hazard is picked. `node tools/smallchat-sim.js [minutes] [seeds]` simulates 0/1/3/15 chatters.
 - Settings (saved in this browser): channel, chatroom id, Clean mode, cooldown per chatter, max chat enemies, difficulty, test mode and bot rate, a fake-chat box, volume and mute.
 
+## Themes
+- **Croww** (default): the original look, unchanged.
+- **Neutral**: no Croww name or art anywhere. Art's slate/off-white palette with a teal accent (`brand/neutral/palette.md`), the **Pip** desk-robot mascot and the four neutral emotes (embedded from `assets/neutral/`), a "CHAT CLASH" neon sign, and plain wording like "THE DESK" / "STREAMER IS AFK". The Crow Boss stays (a generic crow; its name has no Croww in it).
+- Every theme keeps the small credit on the title screen: *made by Croww · kick.com/croww*.
+- Pick it with `?theme=neutral` / `?theme=croww` (wins over the saved choice and is saved), or **Settings > Game > Theme** (switches live, saved in this browser, and drops a stale `?theme=` from the URL). Works with the other params, e.g. `?theme=neutral&afk=1`.
+- **Changing the neutral art** (one place): everything lives in the `THEMES.neutral` object in `src/1b-theme.js`. (`brand/` is gitignored, so the files the build uses are copied into `assets/neutral/`.)
+  1. Colors: replace the hex values in `THEMES.neutral.pal`. Each key is a role; `THEME_ROLES` (same file) lists which original Croww colors that role replaces (e.g. `barBg` = top bar, `field` = play area, `panel` = side panels, `accent` = the teal accent).
+  2. Art: the mascot is `assets/neutral/mascot.png` (from `brand/neutral/mascot-neutral-desk_512.png`) (square, laid out like `assets/mascot-croww-desk_512.png`: monitor on the left, face around 64%/33%, see `DATA.deskArt`) and an optional logo can go in `assets/neutral/logo.png`. `tools/build.js` embeds them automatically as `neutral.mascot` / `neutral.logo`; without them the code-drawn fallbacks are used.
+  3. Emotes: `assets/neutral/neutral{Hype,W,L,LUL}_112.png` (from `brand/neutral/emotes/`), embedded by `tools/build.js` and mapped in `THEMES.neutral.emotes`. If one is missing, a code-drawn face (`emoteFaces`) is used instead.
+  4. `node tools/build.js`, then `node tools/verify-theme.js`.
+- New theme (e.g. Custom): copy `THEMES.neutral` under a new id + label; it shows up in the Settings picker and as `?theme=<id>`.
+- `node tools/verify-theme.js [baselineDir]` writes title / gameplay / results shots for every theme to `shots/verify/theme/`, scans every string drawn on the canvas in the neutral theme for "Croww" (only the credit is allowed), checks the selection plumbing, and with a baseline build dir pixel-diffs the croww theme against it.
+
 ## For chat
 | Command | What it does |
 |---|---|
@@ -39,7 +52,7 @@ The game reads chat the way Kick's web client does:
 The status light in the top bar shows the connection: green = connected, yellow = connecting, red = error/retrying, grey = off.
 **Test mode** (Auto by default) runs bot chatters whenever live chat isn't connected. Set it to **Always on** to test while connected. **Off** means no bot chatters ever (it also cancels bot attacks already queued) and it is remembered across reloads.
 **House NPC waves** (Settings, on by default) are the grey "npc" enemies the game sends itself each wave; untick it to turn them off. They are not chat bots.
-URL params: `?channel=name`, `?room=id`, `?clean=1`, `?test=on|off|auto` (one-shot; changing Test mode in Settings removes it from the URL), `?npc=0`, `?connect=0`.
+URL params: `?channel=name`, `?room=id`, `?clean=1`, `?theme=croww|neutral`, `?test=on|off|auto` (one-shot; changing Test mode in Settings removes it from the URL), `?npc=0`, `?connect=0`.
 
 ## OBS setup
 **Option A: Browser Source (recommended)**

@@ -289,8 +289,9 @@ function drawNeon(t) {
   const flick = (Math.sin(t * 13) > 0.97 || (t % 9 > 8.6 && t % 9 < 8.75)) ? 0.55 : 1;
   ctx.save(); rr(x, y, w, h, 18); ctx.fillStyle = 'rgba(20,8,8,0.96)'; ctx.fill();   // dark backing: the logo glow is semi-transparent
   ctx.shadowBlur = 18; ctx.shadowColor = '#9fd07a'; ctx.lineWidth = 5; ctx.strokeStyle = '#b8e09a'; ctx.stroke(); ctx.restore();
-  if (artReady('logo')) {
-    const im = ART.logo, lw = w - 14, lh = lw * im.naturalHeight / im.naturalWidth;
+  const logo = themeImg('logo');   // croww: the approved neon logo; other themes: THEMES.<id>.art.logo or the code-drawn fallback
+  if (logo) {
+    const im = logo, lw = w - 14, lh = lw * imgH(im) / imgW(im);
     ctx.save(); ctx.globalAlpha = flick; ctx.drawImage(im, x + (w - lw) / 2, y + (h - lh) / 2, lw, lh); ctx.restore();
   } else {
     ctx.save(); ctx.globalAlpha = flick; T('CROWW', x + w / 2, y + h / 2 + 4, 96, DATA.pal.cream, 'center', { w: 700, sw: 5, sc: '#f3c878' }); ctx.restore();
@@ -304,11 +305,13 @@ function drawTitle(t) {
   ctx.save(); ctx.globalAlpha = a;
   ctx.fillStyle = 'rgba(8,4,4,0.93)'; ctx.fillRect(0, 0, 1920, 1080);
   const g = ctx.createRadialGradient(960, 420, 50, 960, 420, 700); g.addColorStop(0, 'rgba(240,176,80,0.16)'); g.addColorStop(1, 'rgba(240,176,80,0)'); ctx.fillStyle = g; ctx.fillRect(0, 0, 1920, 1080);
-  if (artReady('logo')) { const im = ART.logo, lw = 900, lh = lw * im.naturalHeight / im.naturalWidth; ctx.drawImage(im, 960 - lw / 2, 300 - lh / 2, lw, lh); }
+  const logo = (THEME.titleLogo !== false || themeArtIsFile('logo')) && themeImg('logo');
+  if (logo) { const im = logo, lw = 900, lh = lw * imgH(im) / imgW(im); ctx.drawImage(im, 960 - lw / 2, 300 - lh / 2, lw, lh); }
   T('CHAT CLASH', 960, 520, 110, '#fef9e5', 'center', { w: 700, sw: 12 });
   T("Croww's Desk Defense  \u2022  chat spawns the enemies", 960, 610, 36, '#e0b45c', 'center', { w: 700, sw: 6 });
-  if (artReady('mascot')) ctx.drawImage(ART.mascot, 960 - 170, 660, 340, 340);
+  const mas = themeImg('mascot'); if (mas) ctx.drawImage(mas, 960 - 170, 660, 340, 340);
   T('click or press any key', 960, 1020, 24, '#bfae86', 'center', { w: 600, stroke: false });
+  T('made by Croww \u00b7 kick.com/croww', 960, 1056, 18, '#9c8a68', 'center', { w: 600, stroke: false, raw: true });   // credit: shown in EVERY theme, never rewritten
   ctx.restore();
 }
 function drawChillMeter(t) {
@@ -334,7 +337,7 @@ function drawDesk(t) {
   const px = A.x + A.size * 0.86, py = A.y + A.size * 0.97;           // pivot: chair wheels
   ctx.translate(px + flinch, py + dy + (C.hitT > 0 ? -C.hitT * 10 : 0)); ctx.rotate(rot); ctx.translate(-px, -py);
   ell(A.x + A.size * 0.55, A.y + A.size * 0.93, A.size * 0.42, 16); fs('rgba(0,0,0,0.35)');
-  if (artReady('mascot')) ctx.drawImage(ART.mascot, A.x, A.y, A.size, A.size);
+  const mas = themeImg('mascot'); if (mas) ctx.drawImage(mas, A.x, A.y, A.size, A.size);
   // monitor screen overlay (on the image's monitor) for LOW CHILL / GG / hit flash
   const red = G.deskFlash > 0 || def || (f <= 0.3 && Math.sin(t * 8) > 0);
   if (red) { const [sx, sy, sw, sh] = A.screen; ctx.save(); ctx.globalAlpha = 0.72; rr(A.x + sx * A.size, A.y + sy * A.size, sw * A.size, sh * A.size, 4); fs('#6a1028'); ctx.globalAlpha = 1; T(def ? 'GG' : 'LOW CHILL', A.x + (sx + sw / 2) * A.size, A.y + (sy + sh / 2) * A.size, def ? 34 : 18, '#ffb0c0', 'center', { stroke: false, w: 900 }); ctx.restore(); }

@@ -42,7 +42,7 @@ function drawPaused(rt) {
   ctx.fillStyle = 'rgba(10,5,4,0.72)'; ctx.fillRect(0, 90, 1920, 950);
   const w = 820, h = 420, x = 960 - w / 2, y = 290, pulse = 0.5 + 0.5 * Math.sin(rt * 2.4);
   ctx.save(); ctx.shadowBlur = 30 + pulse * 20; ctx.shadowColor = '#9fd07a'; rr(x, y, w, h, 28); ctx.fillStyle = 'rgba(20,8,8,0.96)'; ctx.fill(); ctx.lineWidth = 5; ctx.strokeStyle = '#b8e09a'; ctx.stroke(); ctx.restore();
-  if (artReady('logo')) { const im = ART.logo, lw = 360, lh = lw * im.naturalHeight / im.naturalWidth; ctx.save(); ctx.globalAlpha = 0.85 + pulse * 0.15; ctx.drawImage(im, 960 - lw / 2, y + 22, lw, lh); ctx.restore(); }
+  const logo = themeImg('logo'); if (logo) { const im = logo, lw = 360, lh = lw * imgH(im) / imgW(im); ctx.save(); ctx.globalAlpha = 0.85 + pulse * 0.15; ctx.drawImage(im, 960 - lw / 2, y + 22, lw, lh); ctx.restore(); }
   // big pause glyph + word
   ctx.save(); ctx.shadowBlur = 24; ctx.shadowColor = '#f0b050'; rr(700, y + 170, 34, 110, 8); fs('#fef9e5', 5, '#f3c878'); rr(752, y + 170, 34, 110, 8); fs('#fef9e5', 5, '#f3c878'); ctx.restore();
   ctx.save(); ctx.shadowBlur = 30; ctx.shadowColor = '#f0b050'; T('PAUSED', 1060, y + 226, 120, '#fef9e5', 'center', { w: 700, sw: 10, sc: '#4a1a1a' }); ctx.restore();
@@ -488,12 +488,12 @@ function $(id) { return document.getElementById(id); }
 function updateStatusUI() {
   const el = $('sStatus'); if (!el) return;
   const col = { live: '#3dff7a', connecting: '#ffd23f', error: '#ff6070', off: '#bfae86' }[Kick.status];
-  el.innerHTML = `<span style="color:${col}">\u25CF ${Kick.status.toUpperCase()}</span>&nbsp; <span class="hint">${String(Kick.detail).replace(/</g, '&lt;')}</span>`;
+  el.innerHTML = `<span style="color:${col}">\u25CF ${Kick.status.toUpperCase()}</span>&nbsp; <span class="hint">${sayText(String(Kick.detail)).replace(/</g, '&lt;')}</span>`;
 }
 function syncSettingsUI() {
   $('sChannel').value = settings.channel; $('sRoom').value = settings.rooms[settings.channel] || '';
   $('sTest').value = settings.testMode; $('sAfk').checked = AFK.on; $('sSmall').value = settings.smallChat; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
-  $('sClean').checked = settings.clean; $('sDiff').value = settings.difficulty; $('sCd').value = settings.userCooldown; $('sCap').value = settings.globalCap;
+  $('sTheme').value = THEME.id; $('sClean').checked = settings.clean; $('sDiff').value = settings.difficulty; $('sCd').value = settings.userCooldown; $('sCap').value = settings.globalCap;
   $('bCrow').textContent = crowBossUnlocked() ? 'Crow Boss: unlocked (B to deploy)' : 'Unlock Crow Boss now'; $('sVol').value = settings.volume; $('vVol').textContent = settings.volume + '%'; $('sMute').checked = settings.muted; updateStatusUI();
 }
 function readChannel() { const ch = $('sChannel').value.trim().toLowerCase().replace(/^https?:\/\/(www\.)?kick\.com\//, '').replace(/[^a-z0-9_\-]/g, ''); if (ch && ch !== settings.channel) { settings.channel = ch; $('sRoom').value = settings.rooms[ch] || ''; } }
@@ -507,6 +507,14 @@ $('sSmall').onchange = () => { settings.smallChat = $('sSmall').value; saveSetti
 $('sAfk').onchange = () => setAfk($('sAfk').checked, 'AFK turned off in Settings');
 $('sNpc').onchange = () => { settings.npcWaves = $('sNpc').checked; saveSettings(); };
 $('sBotRate').oninput = () => { settings.botRate = +$('sBotRate').value; $('vBotRate').textContent = settings.botRate + ' msgs/min'; saveSettings(); };
+/* theme: options come from THEMES; switching is live, saved, and drops a stale ?theme= so a reload keeps the choice */
+function themeOptions() { $('sTheme').innerHTML = Object.values(THEMES).map(th => `<option value="${th.id}">${(THEME.say && th.plainLabel) || th.label}</option>`).join(''); $('sTheme').value = THEME.id; }
+themeOptions();
+$('sTheme').onchange = () => {
+  setTheme($('sTheme').value, true); themeOptions();
+  try { if (qs.has('theme')) { qs.delete('theme'); const s = qs.toString(); history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash); } } catch (e) {}
+  updateStatusUI();
+};
 $('sClean').onchange = () => { settings.clean = $('sClean').checked; saveSettings(); };
 $('sDiff').onchange = () => { settings.difficulty = $('sDiff').value; saveSettings(); };
 $('sCd').onchange = () => { settings.userCooldown = clamp(+$('sCd').value || 0, 0, 600); saveSettings(); syncSettingsUI(); };
@@ -542,5 +550,5 @@ window.CC = {
   get G() { return G; }, DATA, settings, Kick, feed, onChat, testModeActive, stopBots, build, upgrade, startWave, newGame, toggleSettings,
   spawn(t, u) { spawnEnemy(t, u || 'tester', false); },
   step(sec, dt) { dt = dt || 1 / 30; const n = Math.round(sec / dt); for (let i = 0; i < n; i++) update(dt); },
-  manual(v) { manual = v; if (v) view.titleT = 0; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : animT); }, setPaused, heldChat, AFK, setAfk, activeChatters, goldPerSec, smallChatK, effCooldown, hypeGainMult, spamCount, forceVote() { G.voteClock = 0; }
+  manual(v) { manual = v; if (v) view.titleT = 0; }, setTheme, get theme() { return THEME.id; }, deployCrowBoss, unlockCrowBoss, crowBossState, view, render(t) { render(t != null ? t : animT); }, setPaused, heldChat, AFK, setAfk, activeChatters, goldPerSec, smallChatK, effCooldown, hypeGainMult, spamCount, forceVote() { G.voteClock = 0; }
 };

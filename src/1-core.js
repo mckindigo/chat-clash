@@ -91,14 +91,17 @@ const EMOTES = {}; for (const k in (typeof EMOTE_SRC !== 'undefined' ? EMOTE_SRC
 const ART = {}; for (const k in (typeof ART_SRC !== 'undefined' ? ART_SRC : {})) { const im = new Image(); im.src = ART_SRC[k]; ART[k] = im; }
 function artReady(k) { const im = ART[k]; return !!(im && im.complete && im.naturalWidth); }
 function crowBossUnlocked() { try { return localStorage.getItem('chatclash.crowBoss') === '1'; } catch (e) { return false; } }
-function drawEmoteImg(name, x, y, size, rot, alpha) { const im = EMOTES[name]; if (!im || !im.complete || !im.naturalWidth) return; ctx.save(); if (alpha != null) ctx.globalAlpha *= alpha; ctx.translate(x + size / 2, y + size / 2); if (rot) ctx.rotate(rot); ctx.drawImage(im, -size / 2, -size / 2, size, size); ctx.restore(); }
+function drawEmoteImg(name, x, y, size, rot, alpha) {
+  const alt = THEME.emotes && THEME.emotes[name];   // non-croww themes: the theme's emote image (ART key), else a code-drawn face
+  if (alt && !artReady(alt)) { const face = (THEME.emoteFaces || {})[name] || 0; ctx.save(); if (alpha != null) ctx.globalAlpha *= alpha; drawEmote(x + size / 2, y + size / 2, size * 0.42, face, rot || 0); ctx.restore(); return; }
+  const im = alt ? ART[alt] : EMOTES[name]; if (!im || !im.complete || !im.naturalWidth) return; ctx.save(); if (alpha != null) ctx.globalAlpha *= alpha; ctx.translate(x + size / 2, y + size / 2); if (rot) ctx.rotate(rot); ctx.drawImage(im, -size / 2, -size / 2, size, size); ctx.restore(); }
 function T(s, x, y, size, col, align, opt) {
-  opt = opt || {};
+  opt = opt || {}; if (!opt.raw) s = sayText(s);   // theme text rewrites (croww: none). raw = the credit line, never rewritten
   ctx.font = `${opt.w || 800} ${size}px ${F}`; ctx.textAlign = align || 'left'; ctx.textBaseline = opt.base || 'middle';
   if (opt.stroke !== false) { ctx.lineJoin = 'round'; ctx.lineWidth = opt.sw || Math.max(3, size * 0.2); ctx.strokeStyle = opt.sc || O; ctx.strokeText(s, x, y); }
   ctx.fillStyle = col || '#fff'; ctx.fillText(s, x, y);
 }
-function fit(s, size, maxW, w) { ctx.font = `${w || 800} ${size}px ${F}`; if (ctx.measureText(s).width <= maxW) return s; while (s.length > 1 && ctx.measureText(s + '\u2026').width > maxW) s = s.slice(0, -1); return s + '\u2026'; }
+function fit(s, size, maxW, w) { s = sayText(s); ctx.font = `${w || 800} ${size}px ${F}`; if (ctx.measureText(s).width <= maxW) return s; while (s.length > 1 && ctx.measureText(s + '\u2026').width > maxW) s = s.slice(0, -1); return s + '\u2026'; }
 function rr(x, y, w, h, r) { ctx.beginPath(); ctx.roundRect(x, y, w, h, r); }
 function circ(x, y, r) { ctx.beginPath(); ctx.arc(x, y, Math.max(0.1, r), 0, Math.PI * 2); }
 function ell(x, y, rx, ry, rot) { ctx.beginPath(); ctx.ellipse(x, y, Math.max(0.1, rx), Math.max(0.1, ry), rot || 0, 0, Math.PI * 2); }

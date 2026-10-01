@@ -9,9 +9,12 @@ let html = rd('src/head.html').toString().replace('<!--FONT-->', fontCss);
 html += `const EMOTE_SRC = ${JSON.stringify(emotes)};\n`;
 // approved Croww art (copied from brand/ into assets/ so it is tracked + published)
 const art = { mascot: 'assets/mascot-croww-desk_512.png', logo: 'assets/logo-croww-neon_720.png' };
+// optional neutral-theme art (see THEMES.neutral in src/1b-theme.js): assets/neutral/mascot.png (Pip, from brand/neutral/mascot-neutral-desk_512.png), optional logo.png, neutral*_112.png emotes
+for (const k of ['mascot', 'logo']) if (fs.existsSync(path.join(root, `assets/neutral/${k}.png`))) art['neutral.' + k] = `assets/neutral/${k}.png`;
+for (const n of ['neutralHype', 'neutralW', 'neutralL', 'neutralLUL']) if (fs.existsSync(path.join(root, `assets/neutral/${n}_112.png`))) art[n] = `assets/neutral/${n}_112.png`;   // neutral emotes (THEMES.neutral.emotes)
 for (const k in art) art[k] = 'data:image/png;base64,' + rd(art[k]).toString('base64');
 html += `const ART_SRC = ${JSON.stringify(art)};\n`;
-for (const f of ['1-core.js', '2-game.js', '3-draw.js', '4-hud.js']) html += rd('src/' + f).toString();
+for (const f of ['1-core.js', '1b-theme.js', '2-game.js', '3-draw.js', '4-hud.js']) html += rd('src/' + f).toString();
 html += rd('src/tail.html').toString();
 fs.writeFileSync(path.join(root, 'index.html'), html);
 console.log('built index.html (' + html.length + ' bytes)');

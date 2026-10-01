@@ -21,7 +21,7 @@ function newGame(keepSession) {
   banner('BUILD YOUR DEFENSES', 'Click a glowing pad to place a tower', '#7fb069', 3.2);
 }
 function diff() { return DATA.difficulty[settings.difficulty] || DATA.difficulty.normal; }
-function banner(title, sub, color, dur, emote) { G.banners.push({ title, sub, color: color || '#fff', t: 0, dur: dur || 2.4, emote }); if (G.banners.length > 2) G.banners.shift(); }
+function banner(title, sub, color, dur, emote) { G.banners.push({ title: sayText(title), sub: sayText(sub), color: color || '#fff', t: 0, dur: dur || 2.4, emote }); if (G.banners.length > 2) G.banners.shift(); }
 function addFeed(user, text, kind) { feed.push({ user, text, kind: kind || 'msg', t: performance.now() }); if (feed.length > 40) feed.shift(); }
 /* per-chatter stats. Keyed by the name the chatter first used; a later message in different case ("Moonpie" vs "moonpie")
    finds the same entry, like cooldowns do. pts = TOP ATTACKERS attack points, dmg = chill taken off the desk. */
