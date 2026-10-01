@@ -492,7 +492,7 @@ function updateStatusUI() {
 }
 function syncSettingsUI() {
   $('sChannel').value = settings.channel; $('sRoom').value = settings.rooms[settings.channel] || '';
-  $('sTest').value = settings.testMode; $('sAfk').checked = AFK.on; $('sSmall').value = settings.smallChat; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
+  $('sTest').value = settings.testMode; $('sAfk').checked = AFK.on; $('sSmall').value = settings.smallChat; $('sNpc').value = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
   $('sTheme').value = THEME.id; $('sClean').checked = settings.clean; $('sDiff').value = settings.difficulty; $('sCd').value = settings.userCooldown; $('sCap').value = settings.globalCap;
   $('bCrow').textContent = crowBossUnlocked() ? 'Crow Boss: unlocked (B to deploy)' : 'Unlock Crow Boss now'; $('sVol').value = settings.volume; $('vVol').textContent = settings.volume + '%'; $('sMute').checked = settings.muted; updateStatusUI();
 }
@@ -505,7 +505,7 @@ $('bLookup').onclick = async () => { readChannel(); delete settings.rooms[settin
 $('sTest').onchange = () => { settings.testMode = normTestMode($('sTest').value, 'off'); if (!testModeActive()) stopBots(); clearTestParam(); saveSettings(); syncSettingsUI(); };
 $('sSmall').onchange = () => { settings.smallChat = $('sSmall').value; saveSettings(); };
 $('sAfk').onchange = () => setAfk($('sAfk').checked, 'AFK turned off in Settings');
-$('sNpc').onchange = () => { settings.npcWaves = $('sNpc').checked; saveSettings(); };
+$('sNpc').onchange = () => { settings.npcWaves = $('sNpc').value; saveSettings(); };
 $('sBotRate').oninput = () => { settings.botRate = +$('sBotRate').value; $('vBotRate').textContent = settings.botRate + ' msgs/min'; saveSettings(); };
 /* theme: options come from THEMES; switching is live, saved, and drops a stale ?theme= so a reload keeps the choice */
 function themeOptions() { $('sTheme').innerHTML = Object.values(THEMES).map(th => `<option value="${th.id}">${(THEME.say && th.plainLabel) || th.label}</option>`).join(''); $('sTheme').value = THEME.id; }

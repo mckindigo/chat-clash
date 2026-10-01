@@ -39,12 +39,16 @@ function chatLoad() { return G.enemies.filter(e => !e.isBot && !e.dead).length +
 
 /* ===================================================================== waves */
 function npcBudget(w) { const A = DATA.ai, l = Math.max(0, w - A.lateFrom); return A.budgetBase + A.budgetPerWave * (w - 1) + A.budgetLate * l * l; }
+function npcFewScale(w) { return w <= 1 ? 0.2 : w === 2 ? 0.25 : w === 3 ? 0.3 : w === 4 ? 0.35 : w === 5 ? 0.4 : 0.5; }
+function npcMode() { if (AFK.on) return 'normal'; if (settings.npcWaves === false) return 'off'; if (settings.npcWaves === true) return 'normal'; return settings.npcWaves; }
+function npcBudgetFor(w, mode) { return npcBudget(w) * (mode === 'normal' ? 1 : mode === 'off' ? 0 : npcFewScale(w)); }
 function lateHpMult(w) { return Math.min(DATA.ai.lateHpCap, Math.pow(1 + DATA.ai.lateHp, Math.max(0, w - DATA.ai.lateFrom))); }
 function waveDuration(w) { return Math.min(DATA.wave.maxDuration, DATA.wave.baseDuration + DATA.wave.perWave * (w - 1)); }
 function startWave() {
   if (G.phase !== 'build') return;
   G.phase = 'wave'; G.waveT = 0; G.waveDur = waveDuration(G.wave); G.waveStats = {};
-  G.aiBudget = npcBudget(G.wave) * diff().ai;
+  G.npcMode = npcMode();
+  G.aiBudget = npcBudgetFor(G.wave, G.npcMode) * diff().ai;
   G.aiGap = clamp(G.waveDur * 0.8 / Math.max(1, G.aiBudget / 1.8), DATA.ai.minGap, DATA.ai.maxGap);
   G.aiTimer = 0.8;
   for (const q of G.chatQueue) { G.release.push(q); G.aiBudget = Math.max(0, G.aiBudget - DATA.enemies[q.type].cost * DATA.ai.chatDiscount); }
@@ -494,6 +498,10 @@ function trimSession(s) {
 function setAfk(v, why) {
   v = !!v; if (AFK.on === v) { syncAfkUI(); return; }
   AFK.on = v; AFK.think = 0.5; AFK.since = gameClock;
+  if (v && G && G.phase === 'wave' && G.npcMode !== 'normal') {
+    G.npcMode = 'normal'; G.aiBudget = Math.max(G.aiBudget, npcBudget(G.wave) * diff().ai);
+    G.aiGap = clamp(G.waveDur * 0.8 / Math.max(1, G.aiBudget / 1.8), DATA.ai.minGap, DATA.ai.maxGap);
+  }
   if (v) {
     if (G && G.paused) setPaused(false);
     view.titleT = 0; view.sel = -1;
@@ -550,7 +558,13 @@ function update(dt) {
   if (G.phase === 'build') { G.phaseT -= dt; if (G.phaseT <= 0) startWave(); }
   else if (G.phase === 'wave') {
     G.waveT += dt;
-    if (G.waveT < G.waveDur && G.aiBudget >= 1 && settings.npcWaves) {
+    const currentNpcMode = npcMode();
+    if (G.npcMode !== currentNpcMode) {
+      G.npcMode = currentNpcMode;
+      G.aiBudget = npcBudgetFor(G.wave, currentNpcMode) * diff().ai;
+      G.aiGap = clamp(G.waveDur * 0.8 / Math.max(1, G.aiBudget / 1.8), DATA.ai.minGap, DATA.ai.maxGap);
+    }
+    if (G.waveT < G.waveDur && G.aiBudget >= 1 && G.npcMode !== 'off') {
       G.aiTimer -= dt;
       if (G.aiTimer <= 0) {
         const opts = [['bug', 5]]; const U = DATA.ai.unlock;

@@ -35,7 +35,7 @@ html,body{margin:0;height:100%;background:#05030a;overflow:hidden}
  <h3>Test mode</h3>
  <div class="row"><label>Test mode</label><select id="sTest"><option value="auto">Auto (only when not connected)</option><option value="on">Always on</option><option value="off">Off</option></select><span class="hint">Off = no bot chatters, ever (also clears their queued attacks)</span></div>
  <div class="row"><label>Bot chat rate</label><input type="range" id="sBotRate" min="0" max="120" step="1"><span id="vBotRate"></span></div>
- <div class="row"><label>House NPC waves</label><input type="checkbox" id="sNpc"><span class="hint">grey "npc" enemies the game sends itself each wave (not chat bots)</span></div>
+ <div class="row"><label>House NPCs</label><select id="sNpc"><option value="few">Few (recommended)</option><option value="off">Off (chat only)</option><option value="normal">Normal (full house waves)</option></select><span class="hint">grey "npc" enemies the game sends itself each wave (AFK always uses Normal)</span></div>
  <div class="row"><label>Fake chat message</label><input id="fUser" placeholder="username" size="12"><input id="fMsg" placeholder="!troll" size="14"><button id="bSend">Send</button></div>
  <h3>Game</h3>
  <div class="cols">

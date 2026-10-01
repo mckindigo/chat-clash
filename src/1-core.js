@@ -114,13 +114,14 @@ function panel(x, y, w, h, accent, alpha) {
 
 /* ===================================================================== settings */
 const SKEY = 'chatclash.settings.v1';
+const NPC_KEY = 'chatclash.houseNpcs.v2';
 const settings = Object.assign({
   channel: 'croww', rooms: Object.assign({}, DATA.kick.knownRooms), clean: false,
   userCooldown: DATA.chat.userCooldown, globalCap: DATA.chat.globalCap, difficulty: 'normal',
-  testMode: 'auto', botRate: DATA.test.botRate, npcWaves: true, smallChat: 'auto', volume: 60, muted: false, autoConnect: true
+  testMode: 'auto', botRate: DATA.test.botRate, npcWaves: 'few', smallChat: 'auto', volume: 60, muted: false, autoConnect: true
 }, (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })());
 settings.rooms = Object.assign({}, DATA.kick.knownRooms, settings.rooms || {});
-function saveSettings() { try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch (e) {} }
+function saveSettings() { try { localStorage.setItem(SKEY, JSON.stringify(settings)); localStorage.setItem(NPC_KEY, settings.npcWaves); } catch (e) {} }
 const qs = new URLSearchParams(location.search);
 if (qs.get('channel')) settings.channel = qs.get('channel').toLowerCase();
 if (qs.get('room')) settings.rooms[settings.channel] = qs.get('room');
@@ -134,12 +135,16 @@ function normTestMode(v, fallback) {
   return fallback;
 }
 settings.testMode = normTestMode(settings.testMode, 'auto');
-settings.npcWaves = settings.npcWaves !== false;
+/* House NPCs migrated from the old boolean toggle: old saves deliberately become Few once.
+   The separate versioned key keeps a user's new choice across future settings migrations. */
+const savedNpcMode = (() => { try { return localStorage.getItem(NPC_KEY); } catch (e) { return null; } })();
+if (['few', 'off', 'normal'].includes(savedNpcMode)) settings.npcWaves = savedNpcMode;
+else if (!['few', 'off', 'normal'].includes(settings.npcWaves)) { settings.npcWaves = 'few'; saveSettings(); }
 if (!['auto', 'on', 'off'].includes(settings.smallChat)) settings.smallChat = 'auto';
 /* ?test= is a one-shot override for that page load. It is NOT allowed to beat a choice the streamer later makes
    in Settings: changing Test mode in-game strips the param from the URL (see clearTestParam) so a reload keeps it. */
 if (qs.has('test')) settings.testMode = normTestMode(qs.get('test'), settings.testMode);
-if (qs.get('npc') === '0' || qs.get('npc') === 'off') settings.npcWaves = false;
+if (qs.get('npc') === '0' || qs.get('npc') === 'off') settings.npcWaves = 'off';
 function clearTestParam() {
   try { if (!qs.has('test')) return; qs.delete('test'); const s = qs.toString(); history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash); } catch (e) {}
 }

@@ -36,7 +36,7 @@ html,body{margin:0;height:100%;background:#05030a;overflow:hidden}
  <h3>Test mode</h3>
  <div class="row"><label>Test mode</label><select id="sTest"><option value="auto">Auto (only when not connected)</option><option value="on">Always on</option><option value="off">Off</option></select><span class="hint">Off = no bot chatters, ever (also clears their queued attacks)</span></div>
  <div class="row"><label>Bot chat rate</label><input type="range" id="sBotRate" min="0" max="120" step="1"><span id="vBotRate"></span></div>
- <div class="row"><label>House NPC waves</label><input type="checkbox" id="sNpc"><span class="hint">grey "npc" enemies the game sends itself each wave (not chat bots)</span></div>
+ <div class="row"><label>House NPCs</label><select id="sNpc"><option value="few">Few (recommended)</option><option value="off">Off (chat only)</option><option value="normal">Normal (full house waves)</option></select><span class="hint">grey "npc" enemies the game sends itself each wave (AFK always uses Normal)</span></div>
  <div class="row"><label>Fake chat message</label><input id="fUser" placeholder="username" size="12"><input id="fMsg" placeholder="!troll" size="14"><button id="bSend">Send</button></div>
  <h3>Game</h3>
  <div class="cols">
@@ -174,13 +174,14 @@ function panel(x, y, w, h, accent, alpha) {
 
 /* ===================================================================== settings */
 const SKEY = 'chatclash.settings.v1';
+const NPC_KEY = 'chatclash.houseNpcs.v2';
 const settings = Object.assign({
   channel: 'croww', rooms: Object.assign({}, DATA.kick.knownRooms), clean: false,
   userCooldown: DATA.chat.userCooldown, globalCap: DATA.chat.globalCap, difficulty: 'normal',
-  testMode: 'auto', botRate: DATA.test.botRate, npcWaves: true, smallChat: 'auto', volume: 60, muted: false, autoConnect: true
+  testMode: 'auto', botRate: DATA.test.botRate, npcWaves: 'few', smallChat: 'auto', volume: 60, muted: false, autoConnect: true
 }, (() => { try { return JSON.parse(localStorage.getItem(SKEY)) || {}; } catch (e) { return {}; } })());
 settings.rooms = Object.assign({}, DATA.kick.knownRooms, settings.rooms || {});
-function saveSettings() { try { localStorage.setItem(SKEY, JSON.stringify(settings)); } catch (e) {} }
+function saveSettings() { try { localStorage.setItem(SKEY, JSON.stringify(settings)); localStorage.setItem(NPC_KEY, settings.npcWaves); } catch (e) {} }
 const qs = new URLSearchParams(location.search);
 if (qs.get('channel')) settings.channel = qs.get('channel').toLowerCase();
 if (qs.get('room')) settings.rooms[settings.channel] = qs.get('room');
@@ -194,12 +195,16 @@ function normTestMode(v, fallback) {
   return fallback;
 }
 settings.testMode = normTestMode(settings.testMode, 'auto');
-settings.npcWaves = settings.npcWaves !== false;
+/* House NPCs migrated from the old boolean toggle: old saves deliberately become Few once.
+   The separate versioned key keeps a user's new choice across future settings migrations. */
+const savedNpcMode = (() => { try { return localStorage.getItem(NPC_KEY); } catch (e) { return null; } })();
+if (['few', 'off', 'normal'].includes(savedNpcMode)) settings.npcWaves = savedNpcMode;
+else if (!['few', 'off', 'normal'].includes(settings.npcWaves)) { settings.npcWaves = 'few'; saveSettings(); }
 if (!['auto', 'on', 'off'].includes(settings.smallChat)) settings.smallChat = 'auto';
 /* ?test= is a one-shot override for that page load. It is NOT allowed to beat a choice the streamer later makes
    in Settings: changing Test mode in-game strips the param from the URL (see clearTestParam) so a reload keeps it. */
 if (qs.has('test')) settings.testMode = normTestMode(qs.get('test'), settings.testMode);
-if (qs.get('npc') === '0' || qs.get('npc') === 'off') settings.npcWaves = false;
+if (qs.get('npc') === '0' || qs.get('npc') === 'off') settings.npcWaves = 'off';
 function clearTestParam() {
   try { if (!qs.has('test')) return; qs.delete('test'); const s = qs.toString(); history.replaceState(null, '', location.pathname + (s ? '?' + s : '') + location.hash); } catch (e) {}
 }
@@ -456,12 +461,16 @@ function chatLoad() { return G.enemies.filter(e => !e.isBot && !e.dead).length +
 
 /* ===================================================================== waves */
 function npcBudget(w) { const A = DATA.ai, l = Math.max(0, w - A.lateFrom); return A.budgetBase + A.budgetPerWave * (w - 1) + A.budgetLate * l * l; }
+function npcFewScale(w) { return w <= 1 ? 0.2 : w === 2 ? 0.25 : w === 3 ? 0.3 : w === 4 ? 0.35 : w === 5 ? 0.4 : 0.5; }
+function npcMode() { if (AFK.on) return 'normal'; if (settings.npcWaves === false) return 'off'; if (settings.npcWaves === true) return 'normal'; return settings.npcWaves; }
+function npcBudgetFor(w, mode) { return npcBudget(w) * (mode === 'normal' ? 1 : mode === 'off' ? 0 : npcFewScale(w)); }
 function lateHpMult(w) { return Math.min(DATA.ai.lateHpCap, Math.pow(1 + DATA.ai.lateHp, Math.max(0, w - DATA.ai.lateFrom))); }
 function waveDuration(w) { return Math.min(DATA.wave.maxDuration, DATA.wave.baseDuration + DATA.wave.perWave * (w - 1)); }
 function startWave() {
   if (G.phase !== 'build') return;
   G.phase = 'wave'; G.waveT = 0; G.waveDur = waveDuration(G.wave); G.waveStats = {};
-  G.aiBudget = npcBudget(G.wave) * diff().ai;
+  G.npcMode = npcMode();
+  G.aiBudget = npcBudgetFor(G.wave, G.npcMode) * diff().ai;
   G.aiGap = clamp(G.waveDur * 0.8 / Math.max(1, G.aiBudget / 1.8), DATA.ai.minGap, DATA.ai.maxGap);
   G.aiTimer = 0.8;
   for (const q of G.chatQueue) { G.release.push(q); G.aiBudget = Math.max(0, G.aiBudget - DATA.enemies[q.type].cost * DATA.ai.chatDiscount); }
@@ -911,6 +920,10 @@ function trimSession(s) {
 function setAfk(v, why) {
   v = !!v; if (AFK.on === v) { syncAfkUI(); return; }
   AFK.on = v; AFK.think = 0.5; AFK.since = gameClock;
+  if (v && G && G.phase === 'wave' && G.npcMode !== 'normal') {
+    G.npcMode = 'normal'; G.aiBudget = Math.max(G.aiBudget, npcBudget(G.wave) * diff().ai);
+    G.aiGap = clamp(G.waveDur * 0.8 / Math.max(1, G.aiBudget / 1.8), DATA.ai.minGap, DATA.ai.maxGap);
+  }
   if (v) {
     if (G && G.paused) setPaused(false);
     view.titleT = 0; view.sel = -1;
@@ -967,7 +980,13 @@ function update(dt) {
   if (G.phase === 'build') { G.phaseT -= dt; if (G.phaseT <= 0) startWave(); }
   else if (G.phase === 'wave') {
     G.waveT += dt;
-    if (G.waveT < G.waveDur && G.aiBudget >= 1 && settings.npcWaves) {
+    const currentNpcMode = npcMode();
+    if (G.npcMode !== currentNpcMode) {
+      G.npcMode = currentNpcMode;
+      G.aiBudget = npcBudgetFor(G.wave, currentNpcMode) * diff().ai;
+      G.aiGap = clamp(G.waveDur * 0.8 / Math.max(1, G.aiBudget / 1.8), DATA.ai.minGap, DATA.ai.maxGap);
+    }
+    if (G.waveT < G.waveDur && G.aiBudget >= 1 && G.npcMode !== 'off') {
       G.aiTimer -= dt;
       if (G.aiTimer <= 0) {
         const opts = [['bug', 5]]; const U = DATA.ai.unlock;
@@ -1878,7 +1897,7 @@ function updateStatusUI() {
 }
 function syncSettingsUI() {
   $('sChannel').value = settings.channel; $('sRoom').value = settings.rooms[settings.channel] || '';
-  $('sTest').value = settings.testMode; $('sAfk').checked = AFK.on; $('sSmall').value = settings.smallChat; $('sNpc').checked = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
+  $('sTest').value = settings.testMode; $('sAfk').checked = AFK.on; $('sSmall').value = settings.smallChat; $('sNpc').value = settings.npcWaves; $('sBotRate').value = settings.botRate; $('vBotRate').textContent = settings.botRate + ' msgs/min';
   $('sTheme').value = THEME.id; $('sClean').checked = settings.clean; $('sDiff').value = settings.difficulty; $('sCd').value = settings.userCooldown; $('sCap').value = settings.globalCap;
   $('bCrow').textContent = crowBossUnlocked() ? 'Crow Boss: unlocked (B to deploy)' : 'Unlock Crow Boss now'; $('sVol').value = settings.volume; $('vVol').textContent = settings.volume + '%'; $('sMute').checked = settings.muted; updateStatusUI();
 }
@@ -1891,7 +1910,7 @@ $('bLookup').onclick = async () => { readChannel(); delete settings.rooms[settin
 $('sTest').onchange = () => { settings.testMode = normTestMode($('sTest').value, 'off'); if (!testModeActive()) stopBots(); clearTestParam(); saveSettings(); syncSettingsUI(); };
 $('sSmall').onchange = () => { settings.smallChat = $('sSmall').value; saveSettings(); };
 $('sAfk').onchange = () => setAfk($('sAfk').checked, 'AFK turned off in Settings');
-$('sNpc').onchange = () => { settings.npcWaves = $('sNpc').checked; saveSettings(); };
+$('sNpc').onchange = () => { settings.npcWaves = $('sNpc').value; saveSettings(); };
 $('sBotRate').oninput = () => { settings.botRate = +$('sBotRate').value; $('vBotRate').textContent = settings.botRate + ' msgs/min'; saveSettings(); };
 /* theme: options come from THEMES; switching is live, saved, and drops a stale ?theme= so a reload keeps the choice */
 function themeOptions() { $('sTheme').innerHTML = Object.values(THEMES).map(th => `<option value="${th.id}">${(THEME.say && th.plainLabel) || th.label}</option>`).join(''); $('sTheme').value = THEME.id; }
