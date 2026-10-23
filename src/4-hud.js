@@ -356,11 +356,28 @@ function drawDrain(t) {
   if (!G.hazard || G.hazard.id !== 'drain') return;
   for (let i = 0; i < 3; i++) { const k = (t * 0.8 + i / 3) % 1; ctx.save(); ctx.globalAlpha = 1 - k; drawCoin(1222 + Math.sin(i * 7) * 10, 70 + k * 60, 10); ctx.restore(); }
 }
+/* CHAT portal sprites live in art/portal/ (relative, so GitHub Pages project URLs resolve). The glow is an oval, so it wobbles a few degrees around the vortex instead of spinning. */
+const PORTAL = {};
+for (const n of ['portal_base.png', 'portal_glow.png', 'portal_base@2x.png', 'portal_glow@2x.png']) { const im = new Image(); im.src = 'art/portal/' + n; PORTAL[n] = im; }
+function portalReady(im) { return !!(im && im.complete && im.naturalWidth); }
+function portalPair() {
+  const pair = suf => (portalReady(PORTAL['portal_base' + suf]) && portalReady(PORTAL['portal_glow' + suf])) ? [PORTAL['portal_base' + suf], PORTAL['portal_glow' + suf]] : null;
+  const hi = Math.min(innerWidth / 1920, innerHeight / 1080) > 1;   // stage is scaled up: use the @2x sprites
+  return (hi && pair('@2x.png')) || pair('.png') || pair('@2x.png');
+}
 function drawPortal(t) {
-  const [x, y] = DATA.path[0];
-  ctx.save(); ctx.translate(x + 18, y);
-  for (let i = 0; i < 3; i++) { ctx.save(); ctx.rotate(t * (1 + i * 0.5) * (i % 2 ? -1 : 1)); ctx.setLineDash([20, 14]); ctx.lineWidth = 5; ctx.strokeStyle = ['#e0b45c', '#7fb069', '#b59a6a'][i]; ell(0, 0, 30 + i * 10, 44 + i * 10); ctx.stroke(); ctx.restore(); }
-  ctx.restore();
+  const [x, y] = DATA.path[0], pair = portalPair();
+  if (pair) {
+    const [base, glow] = pair, ox = x + 18 - 64, oy = y - 90, s = 1 + 0.03 * Math.sin(t * 2.5);
+    ctx.save();
+    ctx.translate(ox + 64, oy + 90);   // pivot: vortex center (64, 90) in 1x sprite space
+    ctx.rotate(Math.sin(t * 0.9) * 4 * Math.PI / 180);
+    ctx.scale(s, s);
+    ctx.globalAlpha = 0.85 + 0.15 * Math.sin(t * 2.5);
+    ctx.drawImage(glow, -64, -90, 128, 160);
+    ctx.restore();
+    ctx.drawImage(base, ox, oy, 128, 160);
+  }
   T('CHAT', x + 18, y - 82, 22, '#e0b45c', 'center', { w: 900 });
 }
 
